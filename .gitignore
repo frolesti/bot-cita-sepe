@@ -1,0 +1,8 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+env/
+venv/
+debug_*.html
+locations_cache.json
