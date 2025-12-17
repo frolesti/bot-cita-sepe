@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bot Cita SEPE</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <style>
+        .scope-section { display: none; }
+        .select2-container .select2-selection--single {
+            height: 38px; /* Match Bootstrap input height */
+            padding: 5px;
+        }
+        .select2-container--default .select2-selection--single .select2-selection__arrow {
+            height: 36px;
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <div class="container mt-5">
+        <h1 class="text-center mb-4">Automatització Cita SEPE</h1>
+        
+        <div class="card p-4 mb-4">
+            <h3>Nova Cerca</h3>
+            <form action="/start" method="POST">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="dni" class="form-label">DNI / NIE</label>
+                        <input type="text" class="form-control" id="dni" name="dni" required placeholder="12345678X" value="{{ last_dni }}">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label for="email" class="form-label">Email per notificar</label>
+                        <input type="email" class="form-control" id="email" name="email" required placeholder="el_teu@email.com" value="{{ last_email }}">
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label for="community" class="form-label">1. Selecciona Comunitat Autònoma</label>
+                    <select class="form-select" id="community" name="community" required onchange="onCommunityChange()" style="width: 100%;">
+                        <option value="">Tria una opció...</option>
+                        {% for comm in communities %}
+                        <option value="{{ comm }}">{{ comm }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div id="scope_container" class="mb-3" style="display:none;">
+                    <label class="form-label">2. Àmbit de Cerca</label>
+                    <div class="btn-group w-100" role="group">
+                        <input type="radio" class="btn-check" name="scope" id="scope_all" value="all_community" checked onclick="showScope('all_community')">
+                        <label class="btn btn-outline-primary" for="scope_all">Tota la Comunitat</label>
+
+                        <input type="radio" class="btn-check" name="scope" id="scope_provincia" value="provincia" onclick="showScope('provincia')">
+                        <label class="btn btn-outline-primary" for="scope_provincia">Província</label>
+
+                        <input type="radio" class="btn-check" name="scope" id="scope_comarca" value="comarca" onclick="showScope('comarca')">
+                        <label class="btn btn-outline-primary" id="label_scope_comarca" for="scope_comarca">Comarca</label>
+
+                        <input type="radio" class="btn-check" name="scope" id="scope_municipi" value="municipi" onclick="showScope('municipi')">
+                        <label class="btn btn-outline-primary" for="scope_municipi">Municipi</label>
+
+                        <input type="radio" class="btn-check" name="scope" id="scope_zip" value="zip" onclick="showScope('zip')">
+                        <label class="btn btn-outline-primary" for="scope_zip">Codi Postal</label>
+                    </div>
+                </div>
+
+                <!-- Seccions dinàmiques -->
+                <div id="div_provincia" class="mb-3 scope-section">
+                    <label class="form-label">Selecciona Província</label>
+                    <select class="form-select" id="provincia_select" name="provincia_select" multiple onchange="onProvinceChange()" style="width: 100%;">
+                    </select>
+                </div>
+
+                <div id="div_comarca" class="mb-3 scope-section">
+                    <label class="form-label">Selecciona Comarca</label>
+                    <select class="form-select" id="comarca_select" name="comarca_select" multiple onchange="onComarcaChange()" style="width: 100%;">
+                    </select>
+                </div>
+
+                <div id="div_municipi" class="mb-3 scope-section">
+                    <label class="form-label">Selecciona Municipi</label>
+                    <select class="form-select" id="municipi_select" name="municipi_select" multiple style="width: 100%;" disabled>
+                        <!-- Options loaded dynamically -->
+                    </select>
+                </div>
+
+                <div id="div_zip" class="mb-3 scope-section">
+                    <label class="form-label">Codi Postal Específic (separats per coma)</label>
+                    <input type="text" class="form-control" name="zip_code_input" placeholder="08001, 08002, 08003">
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Tipus de Cita</label>
+                    <select class="form-select" name="appt_type">
+                        <option value="person">Presencial</option>
+                        <option value="phone">Telefònica</option>
+                    </select>
+                </div>
+                <button type="submit" class="btn btn-primary w-100">Iniciar Monitoratge</button>
+            </form>
+        </div>
+
+        <div class="card p-4">
+            <h3>Cerques Actives</h3>
+            {% with messages = get_flashed_messages() %}
+                {% if messages %}
+                    <div class="alert alert-info">
+                        {% for message in messages %}
+                            <p class="mb-0">{{ message }}</p>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            {% endwith %}
+
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>DNI</th>
+                        <th>Zona / CP Actual</th>
+                        <th>Tipus</th>
+                        <th>Estat</th>
+                        <th>Acció</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for dni, data in searches.items() %}
+                    <tr>
+                        <td>{{ dni }}</td>
+                        <td>
+                            <strong>{{ data.scope_name }}</strong><br>
+                            <small class="text-muted">Rotant: {{ data.zips[data.current_zip_index] }}</small>
+                        </td>
+                        <td>{{ 'Presencial' if data.type == 'person' else 'Telefònica' }}</td>
+                        <td>
+                            {% if data.active %}
+                                <span class="badge bg-success">Cercant...</span>
+                            {% else %}
+                                <span class="badge bg-secondary">Aturat</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a href="/stop/{{ dni }}" class="btn btn-danger btn-sm">Aturar</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+    <script>
+        let currentCommunities = [];
+        const CATALUNYA_NAMES = ['Cataluña', 'Catalunya']; // Adjust based on backend data
+
+        $(document).ready(function() {
+            // Initialize Select2
+            $('#community').select2({
+                placeholder: "Tria una opció...",
+                allowClear: true
+            });
+            
+            $('#provincia_select').select2({
+                placeholder: "Tria una o més províncies...",
+                closeOnSelect: false,
+                allowClear: true
+            });
+
+            $('#comarca_select').select2({
+                placeholder: "Tria una o més comarques...",
+                closeOnSelect: false,
+                allowClear: true
+            });
+
+            $('#municipi_select').select2({
+                placeholder: "Tria un o més municipis...",
+                closeOnSelect: false,
+                allowClear: true
+            });
+
+            // Funció per netejar el text de cerca després de seleccionar una opció
+            function clearSearchOnSelect(e) {
+                var select2 = $(this).data('select2');
+                if (!select2) return;
+                
+                // Intentem trobar el camp de cerca (pot variar segons si és dropdown o inline)
+                var $search = select2.dropdown.$search || select2.selection.$search;
+                
+                if ($search && $search.length) {
+                    $search.val('').trigger('input');
+                }
+            }
+
+            // Apliquem la millora als selectors múltiples
+            $('#provincia_select').on('select2:select', clearSearchOnSelect);
+            $('#comarca_select').on('select2:select', clearSearchOnSelect);
+            $('#municipi_select').on('select2:select', clearSearchOnSelect);
+
+            // Bind events using jQuery for Select2 compatibility
+            $('#community').on('change', onCommunityChange);
+            $('#provincia_select').on('change', onProvinceChange);
+            $('#comarca_select').on('change', onComarcaChange);
+        });
+
+        function getSelectValues(select) {
+            // For Select2/jQuery, .val() returns array for multiple, string for single
+            const val = $(select).val();
+            if (!val) return [];
+            return Array.isArray(val) ? val : [val];
+        }
+
+        function onCommunityChange() {
+            const select = document.getElementById('community');
+            currentCommunities = getSelectValues(select);
+            const scopeContainer = document.getElementById('scope_container');
+            
+            if (currentCommunities.length > 0 && currentCommunities[0] !== "") {
+                scopeContainer.style.display = 'block';
+                
+                // Check if Catalunya is selected
+                const isCatSelected = currentCommunities.some(c => CATALUNYA_NAMES.includes(c));
+                
+                // Toggle Comarca visibility
+                const comarcaRadio = document.getElementById('scope_comarca');
+                const comarcaLabel = document.getElementById('label_scope_comarca');
+                
+                if (isCatSelected) {
+                    comarcaRadio.disabled = false;
+                    comarcaLabel.classList.remove('disabled');
+                    comarcaLabel.style.display = 'inline-block';
+                    comarcaRadio.style.display = 'inline-block'; 
+                    loadComarcas();
+                } else {
+                    comarcaRadio.disabled = true;
+                    comarcaLabel.classList.add('disabled');
+                    comarcaLabel.style.display = 'none';
+                    comarcaRadio.style.display = 'none';
+                    // If comarca was selected, switch to all
+                    if (comarcaRadio.checked) {
+                        document.getElementById('scope_all').checked = true;
+                        showScope('all_community');
+                    }
+                }
+
+                // Load Provinces
+                loadProvinces(currentCommunities);
+                
+                // Reset downstream
+                $('#municipi_select').empty().trigger('change');
+                $('#municipi_select').prop('disabled', true);
+
+            } else {
+                scopeContainer.style.display = 'none';
+                document.querySelectorAll('.scope-section').forEach(el => el.style.display = 'none');
+            }
+        }
+
+        function showScope(scope) {
+            document.querySelectorAll('.scope-section').forEach(el => el.style.display = 'none');
+            
+            if (scope === 'zip') {
+                document.getElementById('div_zip').style.display = 'block';
+            } else if (scope === 'municipi') {
+                // Show filters for municipality
+                document.getElementById('div_provincia').style.display = 'block';
+                
+                // Show comarca filter only if Cat is selected
+                const isCatSelected = currentCommunities.some(c => CATALUNYA_NAMES.includes(c));
+                if (isCatSelected) {
+                    document.getElementById('div_comarca').style.display = 'block';
+                }
+                
+                document.getElementById('div_municipi').style.display = 'block';
+            } else if (scope === 'comarca') {
+                document.getElementById('div_provincia').style.display = 'block';
+                document.getElementById('div_comarca').style.display = 'block';
+            } else if (scope === 'provincia') {
+                document.getElementById('div_provincia').style.display = 'block';
+            }
+        }
+
+        function loadProvinces(communities) {
+            if(!communities || communities.length === 0) return;
+            
+            const params = new URLSearchParams();
+            communities.forEach(c => params.append('community', c));
+            
+            fetch(`/api/provinces?${params.toString()}`)
+                .then(response => response.json())
+                .then(data => fillSelect('provincia_select', data));
+        }
+
+        function loadComarcas() {
+            const provSelect = document.getElementById('provincia_select');
+            const provinces = getSelectValues(provSelect);
+            
+            if (provinces.length === 0) {
+                $('#comarca_select').prop('disabled', true);
+                $('#comarca_select').empty();
+                return;
+            }
+            
+            $('#comarca_select').prop('disabled', false);
+
+            const params = new URLSearchParams();
+            provinces.forEach(p => params.append('province', p));
+
+            fetch(`/api/comarques?${params.toString()}`)
+                .then(response => response.json())
+                .then(data => fillSelect('comarca_select', data));
+        }
+
+        function onProvinceChange() {
+            // Reload comarques based on province selection (if Cat is selected)
+            const isCatSelected = currentCommunities.some(c => CATALUNYA_NAMES.includes(c));
+            if (isCatSelected) {
+                loadComarcas();
+            }
+
+            // When province changes, reload municipalities if scope is municipi
+            if (document.getElementById('scope_municipi').checked) {
+                loadMunicipios();
+            }
+        }
+
+        function onComarcaChange() {
+            // When comarca changes, reload municipalities if scope is municipi
+            if (document.getElementById('scope_municipi').checked) {
+                loadMunicipios();
+            }
+        }
+
+        function loadMunicipios() {
+            const provSelect = document.getElementById('provincia_select');
+            const comarcaSelect = document.getElementById('comarca_select');
+            
+            const provinces = getSelectValues(provSelect);
+            const comarques = getSelectValues(comarcaSelect);
+            
+            // Disable if no filter selected
+            if (provinces.length === 0 && comarques.length === 0) {
+                $('#municipi_select').prop('disabled', true);
+                $('#municipi_select').empty().trigger('change');
+                return;
+            }
+            
+            $('#municipi_select').prop('disabled', false);
+
+            const params = new URLSearchParams();
+            currentCommunities.forEach(c => params.append('community', c));
+            provinces.forEach(p => params.append('province', p));
+            comarques.forEach(c => params.append('comarca', c));
+
+            fetch(`/api/municipios?${params.toString()}`)
+                .then(response => response.json())
+                .then(data => fillSelect('municipi_select', data));
+        }
+
+        function fillSelect(id, items) {
+            const select = $('#' + id);
+            select.empty();
+            items.forEach(item => {
+                const option = new Option(item, item, false, false);
+                select.append(option);
+            });
+            select.trigger('change');
+        }
+
+        // Validació del formulari abans d'enviar
+        $('form').on('submit', function(e) {
+            var community = $('#community').val();
+            if (!community || community === '') {
+                e.preventDefault();
+                alert('Has de seleccionar una Comunitat Autònoma per continuar.');
+                // Intentem obrir el desplegable perquè l'usuari ho vegi
+                $('#community').select2('open');
+                return false;
+            }
+        });
+
+        // Actualització dinàmica de l'estat de les cerques
+        function updateSearchStatus() {
+            fetch('/api/status')
+                .then(response => response.json())
+                .then(data => {
+                    for (const [dni, status] of Object.entries(data)) {
+                        // Busquem la fila corresponent al DNI
+                        // Com que no tenim IDs a les files, busquem pel text de la primera cel·la
+                        $('table tbody tr').each(function() {
+                            const rowDni = $(this).find('td:first').text().trim();
+                            if (rowDni === dni) {
+                                // Actualitzem la cel·la de Zona / CP Actual
+                                const statusCell = $(this).find('td:nth-child(2) small');
+                                if (statusCell.length) {
+                                    statusCell.text(`Rotant: ${status.current_zip} [${status.current_index}/${status.total_zips}]`);
+                                }
+                                
+                                // Actualitzem l'estat (badge)
+                                const badgeCell = $(this).find('td:nth-child(4) span');
+                                if (status.active) {
+                                    badgeCell.removeClass('bg-secondary').addClass('bg-success').text('Cercant...');
+                                } else {
+                                    badgeCell.removeClass('bg-success').addClass('bg-secondary').text('Aturat');
+                                }
+                            }
+                        });
+                    }
+                })
+                .catch(err => console.error('Error fetching status:', err));
+        }
+
+        // Executar cada 2 segons només si hi ha cerques a la taula
+        if ($('table tbody tr').length > 0) {
+            setInterval(updateSearchStatus, 2000);
+        }
+    </script>
+</body>
+</html>

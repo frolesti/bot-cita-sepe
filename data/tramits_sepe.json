@@ -1,0 +1,30 @@
+{
+    "He finalizado un trabajo: acceso o reanudación de prestación o subsidio": {
+        "value": "158",
+        "subtramites": []
+    },
+    "Otros accesos subsidio": {
+        "value": "164",
+        "subtramites": []
+    },
+    "Declaración anual de Rentas o prórroga": {
+        "value": "152",
+        "subtramites": []
+    },
+    "Cobros indebidos, sanciones, variaciones económicas o familiares y otras incidencias": {
+        "value": "149",
+        "subtramites": []
+    },
+    "Estoy cobrando prestación/subsidio y ha cambiado mi situación": {
+        "value": "155",
+        "subtramites": []
+    },
+    "Tránsito a IMV.": {
+        "value": "241",
+        "subtramites": []
+    },
+    "Información general, entrega documentación, modificación datos bancarios": {
+        "value": "161",
+        "subtramites": []
+    }
+}
