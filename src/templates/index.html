@@ -95,34 +95,34 @@
 
                 <div id="div_zip" class="mb-3 scope-section">
                     <label class="form-label">Codi Postal Específic (separats per coma)</label>
-                    <input type="text" class="form-control" name="zip_code_input" placeholder="08001, 08002, 08003">
+                    <input type="text" class="form-control" name="zip_code_input" placeholder="08001, 08002, 08003" value="{{ last_zip_input }}">
                 </div>
 
                 <div class="row mb-3">
                     <div class="col-md-6">
                         <label class="form-label">Tipus de Cita</label>
                         <select class="form-select" name="appt_type">
-                            <option value="person">Presencial</option>
-                            <option value="phone">Telefònica</option>
+                            <option value="person" {% if last_appt_type == 'person' %}selected{% endif %}>Presencial</option>
+                            <option value="phone" {% if last_appt_type == 'phone' %}selected{% endif %}>Telefònica</option>
                         </select>
                     </div>
                     <div class="col-md-6">
                         <label class="form-label">Programació de la Cerca</label>
                         <div class="mb-2">
                             <div class="form-check">
-                                <input class="form-check-input" type="radio" name="freq_type" id="freq_once" value="once" checked onclick="toggleFreqOptions()">
+                                <input class="form-check-input" type="radio" name="freq_type" id="freq_once" value="once" {% if last_freq_type == 'once' %}checked{% endif %} onclick="toggleFreqOptions()">
                                 <label class="form-check-label" for="freq_once">
                                     Una sola vegada (Aturar al final)
                                 </label>
                             </div>
                             <div class="form-check">
-                                <input class="form-check-input" type="radio" name="freq_type" id="freq_interval" value="interval" onclick="toggleFreqOptions()">
+                                <input class="form-check-input" type="radio" name="freq_type" id="freq_interval" value="interval" {% if last_freq_type == 'interval' %}checked{% endif %} onclick="toggleFreqOptions()">
                                 <label class="form-check-label" for="freq_interval">
                                     Cada X hores
                                 </label>
                             </div>
                             <div class="form-check">
-                                <input class="form-check-input" type="radio" name="freq_type" id="freq_daily" value="daily" onclick="toggleFreqOptions()">
+                                <input class="form-check-input" type="radio" name="freq_type" id="freq_daily" value="daily" {% if last_freq_type == 'daily' %}checked{% endif %} onclick="toggleFreqOptions()">
                                 <label class="form-check-label" for="freq_daily">
                                     Cada dia a una hora concreta
                                 </label>
@@ -132,7 +132,7 @@
                         <div id="freq_options_interval" style="display:none;" class="mt-2">
                             <div class="input-group">
                                 <span class="input-group-text">Cada</span>
-                                <input type="number" class="form-control" name="interval_hours" min="1" max="24" value="1">
+                                <input type="number" class="form-control" name="interval_hours" min="1" max="24" value="{{ last_interval }}">
                                 <span class="input-group-text">hores</span>
                             </div>
                         </div>
@@ -140,7 +140,7 @@
                         <div id="freq_options_daily" style="display:none;" class="mt-2">
                             <div class="input-group">
                                 <span class="input-group-text">Hora</span>
-                                <input type="time" class="form-control" name="daily_time" value="09:00">
+                                <input type="time" class="form-control" name="daily_time" value="{{ last_daily_time }}">
                             </div>
                         </div>
                         
@@ -200,6 +200,12 @@
                                         Última volta: {{ data.last_duration }}
                                     {% endif %}
                                 </span>
+                                <br>
+                                <span class="last-result text-muted" style="font-size: 0.85em; font-style: italic;">
+                                    {% if data.last_result_message %}
+                                        {{ data.last_result_message }}
+                                    {% endif %}
+                                </span>
                             </small>
                         </td>
                         <td>{{ 'Presencial' if data.type == 'person' else 'Telefònica' }}</td>
@@ -231,9 +237,34 @@
 
     <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+    
+    <!-- Data injection to avoid JS syntax errors in editor -->
+    <script id="server-data" type="application/json">
+        {
+            "lastCommunity": {{ last_community | tojson }},
+            "lastScope": {{ last_scope | tojson }},
+            "lastProvinces": {{ last_provinces | tojson }},
+            "lastComarques": {{ last_comarques | tojson }},
+            "lastMunicipis": {{ last_municipis | tojson }}
+        }
+    </script>
+
     <script>
         let currentCommunities = [];
         const CATALUNYA_NAMES = ['Cataluña', 'Catalunya']; // Adjust based on backend data
+        
+        // Read injected variables from the JSON script block
+        let lastCommunity, lastScope, lastProvinces, lastComarques, lastMunicipis;
+        try {
+            const serverData = JSON.parse(document.getElementById('server-data').textContent);
+            lastCommunity = serverData.lastCommunity;
+            lastScope = serverData.lastScope;
+            lastProvinces = serverData.lastProvinces;
+            lastComarques = serverData.lastComarques;
+            lastMunicipis = serverData.lastMunicipis;
+        } catch (e) {
+            console.error("Error parsing server data", e);
+        }
 
         function toggleFreqOptions() {
             const type = document.querySelector('input[name="freq_type"]:checked').value;
@@ -289,7 +320,74 @@
             $('#community').on('change', onCommunityChange);
             $('#provincia_select').on('change', onProvinceChange);
             $('#comarca_select').on('change', onComarcaChange);
+
+            // Restore state if available
+            restoreState();
         });
+
+        async function restoreState() {
+            toggleFreqOptions();
+
+            if (lastCommunity && lastCommunity.length > 0) {
+                // Set community value without triggering change yet to avoid async issues
+                $('#community').val(lastCommunity).trigger('change.select2');
+                
+                // Manually trigger the logic of onCommunityChange but waiting for results
+                const select = document.getElementById('community');
+                currentCommunities = getSelectValues(select);
+                const scopeContainer = document.getElementById('scope_container');
+                
+                if (currentCommunities.length > 0 && currentCommunities[0] !== "") {
+                    scopeContainer.style.display = 'block';
+                    const isCatSelected = currentCommunities.some(c => CATALUNYA_NAMES.includes(c));
+                    
+                    // Toggle Comarca visibility logic
+                    const comarcaRadio = document.getElementById('scope_comarca');
+                    const comarcaLabel = document.getElementById('label_scope_comarca');
+                    if (isCatSelected) {
+                        comarcaRadio.disabled = false;
+                        comarcaLabel.classList.remove('disabled');
+                        comarcaLabel.style.display = 'inline-block';
+                        comarcaRadio.style.display = 'inline-block'; 
+                    } else {
+                        comarcaRadio.disabled = true;
+                        comarcaLabel.classList.add('disabled');
+                        comarcaLabel.style.display = 'none';
+                        comarcaRadio.style.display = 'none';
+                    }
+
+                    // Load Provinces and wait
+                    await loadProvinces(currentCommunities);
+                    
+                    // Restore Provinces
+                    if (lastProvinces && lastProvinces.length > 0) {
+                        $('#provincia_select').val(lastProvinces).trigger('change.select2');
+                    }
+
+                    // Load Comarcas (if needed)
+                    if (isCatSelected) {
+                        await loadComarcas();
+                        if (lastComarques && lastComarques.length > 0) {
+                            $('#comarca_select').val(lastComarques).trigger('change.select2');
+                        }
+                    }
+                    
+                    // Restore Scope
+                    if (lastScope) {
+                        $(`input[name="scope"][value="${lastScope}"]`).prop('checked', true);
+                        showScope(lastScope);
+                    }
+
+                    // Load Municipios if needed
+                    if (lastScope === 'municipi') {
+                        await loadMunicipios();
+                        if (lastMunicipis && lastMunicipis.length > 0) {
+                            $('#municipi_select').val(lastMunicipis).trigger('change.select2');
+                        }
+                    }
+                }
+            }
+        }
 
         function getSelectValues(select) {
             // For Select2/jQuery, .val() returns array for multiple, string for single
@@ -369,12 +467,12 @@
         }
 
         function loadProvinces(communities) {
-            if(!communities || communities.length === 0) return;
+            if(!communities || communities.length === 0) return Promise.resolve();
             
             const params = new URLSearchParams();
             communities.forEach(c => params.append('community', c));
             
-            fetch(`/api/provinces?${params.toString()}`)
+            return fetch(`/api/provinces?${params.toString()}`)
                 .then(response => response.json())
                 .then(data => fillSelect('provincia_select', data));
         }
@@ -386,7 +484,7 @@
             if (provinces.length === 0) {
                 $('#comarca_select').prop('disabled', true);
                 $('#comarca_select').empty();
-                return;
+                return Promise.resolve();
             }
             
             $('#comarca_select').prop('disabled', false);
@@ -394,7 +492,7 @@
             const params = new URLSearchParams();
             provinces.forEach(p => params.append('province', p));
 
-            fetch(`/api/comarques?${params.toString()}`)
+            return fetch(`/api/comarques?${params.toString()}`)
                 .then(response => response.json())
                 .then(data => fillSelect('comarca_select', data));
         }
@@ -430,7 +528,7 @@
             if (provinces.length === 0 && comarques.length === 0) {
                 $('#municipi_select').prop('disabled', true);
                 $('#municipi_select').empty().trigger('change');
-                return;
+                return Promise.resolve();
             }
             
             $('#municipi_select').prop('disabled', false);
@@ -440,7 +538,7 @@
             provinces.forEach(p => params.append('province', p));
             comarques.forEach(c => params.append('comarca', c));
 
-            fetch(`/api/municipios?${params.toString()}`)
+            return fetch(`/api/municipios?${params.toString()}`)
                 .then(response => response.json())
                 .then(data => fillSelect('municipi_select', data));
         }
@@ -507,6 +605,16 @@
                                     }
                                     if (status.last_duration && status.last_duration !== 'N/A') {
                                         durationSpan.text(`Última volta: ${status.last_duration}`);
+                                    }
+
+                                    // Actualitzem el missatge de resultat
+                                    let resultSpan = statusCell.find('.last-result');
+                                    if (resultSpan.length === 0) {
+                                        statusCell.append('<br><span class="last-result text-muted" style="font-size: 0.85em; font-style: italic;"></span>');
+                                        resultSpan = statusCell.find('.last-result');
+                                    }
+                                    if (status.last_result_message) {
+                                        resultSpan.text(status.last_result_message);
                                     }
                                 }
                                 
