@@ -32,7 +32,10 @@
             
             <form action="/start" method="POST">
                 <fieldset>
-                <div class="row">
+                
+                <!-- 1. Informació Personal -->
+                <h5 class="mb-3">1. Informació Personal</h5>
+                <div class="row mb-4">
                     <div class="col-md-6 mb-3">
                         <label for="dni" class="form-label">DNI / NIE</label>
                         <input type="text" class="form-control" id="dni" name="dni" required placeholder="12345678X" value="{{ last_dni }}">
@@ -43,8 +46,9 @@
                     </div>
                 </div>
 
-                <div class="mb-3">
-                    <label for="community" class="form-label">1. Selecciona Comunitat Autònoma</label>
+                <!-- 2. Comunitat Autònoma -->
+                <h5 class="mb-3">2. Selecciona Comunitat Autònoma</h5>
+                <div class="mb-4">
                     <select class="form-select" id="community" name="community" required onchange="onCommunityChange()" style="width: 100%;">
                         <option value="">Tria una opció...</option>
                         {% for comm in communities %}
@@ -53,102 +57,108 @@
                     </select>
                 </div>
 
-                <div id="scope_container" class="mb-3" style="display:none;">
-                    <label class="form-label">2. Àmbit de Cerca</label>
-                    <div class="btn-group w-100" role="group">
-                        <input type="radio" class="btn-check" name="scope" id="scope_all" value="all_community" checked onclick="showScope('all_community')">
-                        <label class="btn btn-outline-primary" for="scope_all">Tota la Comunitat</label>
+                <!-- 3. Àmbit de Cerca -->
+                <div id="scope_container" style="display:none;">
+                    <h5 class="mb-3">3. Àmbit de Cerca</h5>
+                    
+                    <!-- Dual Toggle -->
+                    <div class="btn-group w-100 mb-3" role="group">
+                        <input type="radio" class="btn-check" name="scope_mode" id="mode_zip" value="zip" checked onclick="toggleScopeMode('zip')">
+                        <label class="btn btn-outline-primary" for="mode_zip">Codi Postal</label>
 
-                        <input type="radio" class="btn-check" name="scope" id="scope_provincia" value="provincia" onclick="showScope('provincia')">
-                        <label class="btn btn-outline-primary" for="scope_provincia">Província</label>
-
-                        <input type="radio" class="btn-check" name="scope" id="scope_comarca" value="comarca" onclick="showScope('comarca')">
-                        <label class="btn btn-outline-primary" id="label_scope_comarca" for="scope_comarca">Comarca</label>
-
-                        <input type="radio" class="btn-check" name="scope" id="scope_municipi" value="municipi" onclick="showScope('municipi')">
-                        <label class="btn btn-outline-primary" for="scope_municipi">Municipi</label>
-
-                        <input type="radio" class="btn-check" name="scope" id="scope_zip" value="zip" onclick="showScope('zip')">
-                        <label class="btn btn-outline-primary" for="scope_zip">Codi Postal</label>
+                        <input type="radio" class="btn-check" name="scope_mode" id="mode_location" value="location" onclick="toggleScopeMode('location')">
+                        <label class="btn btn-outline-primary" for="mode_location">Localitat</label>
                     </div>
-                </div>
 
-                <!-- Seccions dinàmiques -->
-                <div id="div_provincia" class="mb-3 scope-section">
-                    <label class="form-label">Selecciona Província</label>
-                    <select class="form-select" id="provincia_select" name="provincia_select" multiple onchange="onProvinceChange()" style="width: 100%;">
-                    </select>
-                </div>
-
-                <div id="div_comarca" class="mb-3 scope-section">
-                    <label class="form-label">Selecciona Comarca</label>
-                    <select class="form-select" id="comarca_select" name="comarca_select" multiple onchange="onComarcaChange()" style="width: 100%;">
-                    </select>
-                </div>
-
-                <div id="div_municipi" class="mb-3 scope-section">
-                    <label class="form-label">Selecciona Municipi</label>
-                    <select class="form-select" id="municipi_select" name="municipi_select" multiple style="width: 100%;" disabled>
-                        <!-- Options loaded dynamically -->
-                    </select>
-                </div>
-
-                <div id="div_zip" class="mb-3 scope-section">
-                    <label class="form-label">Codi Postal Específic (separats per coma)</label>
-                    <input type="text" class="form-control" name="zip_code_input" placeholder="08001, 08002, 08003" value="{{ last_zip_input }}">
-                </div>
-
-                <div class="row mb-3">
-                    <div class="col-md-6">
-                        <label class="form-label">Tipus de Cita</label>
-                        <select class="form-select" name="appt_type">
-                            <option value="person" {% if last_appt_type == 'person' %}selected{% endif %}>Presencial</option>
-                            <option value="phone" {% if last_appt_type == 'phone' %}selected{% endif %}>Telefònica</option>
-                        </select>
+                    <!-- Zip Code Input Section -->
+                    <div id="section_zip_input" class="mb-4">
+                        <label class="form-label">Codi Postal Específic (separats per coma)</label>
+                        <input type="text" class="form-control" id="zip_code_input" name="zip_code_input" placeholder="08001, 08002, 08003" value="{{ last_zip_input }}" onkeyup="updateZipTimeEstimate()">
+                        <div id="zip_time_alert" class="alert alert-info mt-2 py-1 px-2" style="font-size: 0.85rem; display:none;">
+                            <i class="bi bi-info-circle"></i> <span id="zip_time_text"></span>
+                        </div>
                     </div>
-                    <div class="col-md-6">
-                        <label class="form-label">Programació de la Cerca</label>
-                        <div class="mb-2">
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="freq_type" id="freq_once" value="once" {% if last_freq_type == 'once' %}checked{% endif %} onclick="toggleFreqOptions()">
-                                <label class="form-check-label" for="freq_once">
-                                    Una sola vegada (Aturar al final)
-                                </label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="freq_type" id="freq_interval" value="interval" {% if last_freq_type == 'interval' %}checked{% endif %} onclick="toggleFreqOptions()">
-                                <label class="form-check-label" for="freq_interval">
-                                    Cada X hores
-                                </label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="freq_type" id="freq_daily" value="daily" {% if last_freq_type == 'daily' %}checked{% endif %} onclick="toggleFreqOptions()">
-                                <label class="form-check-label" for="freq_daily">
-                                    Cada dia a una hora concreta
-                                </label>
-                            </div>
+
+                    <!-- Location Selectors Section -->
+                    <div id="section_location_selectors" class="mb-4" style="display:none;">
+                        <!-- Hidden scope radios for backend compatibility -->
+                        <div class="d-none">
+                            <input type="radio" name="scope" id="scope_all" value="all_community">
+                            <input type="radio" name="scope" id="scope_provincia" value="provincia">
+                            <input type="radio" name="scope" id="scope_comarca" value="comarca">
+                            <input type="radio" name="scope" id="scope_municipi" value="municipi">
+                            <input type="radio" name="scope" id="scope_zip" value="zip">
                         </div>
 
-                        <div id="freq_options_interval" style="display:none;" class="mt-2">
-                            <div class="input-group">
+                        <div class="mb-3" id="div_provincia_wrapper">
+                            <label class="form-label">Província</label>
+                            <select class="form-select" id="provincia_select" name="provincia_select" multiple onchange="onProvinceChange()" style="width: 100%;">
+                            </select>
+                        </div>
+
+                        <div class="mb-3" id="div_comarca_wrapper">
+                            <label class="form-label">Comarca</label>
+                            <select class="form-select" id="comarca_select" name="comarca_select" multiple onchange="onComarcaChange()" style="width: 100%;">
+                            </select>
+                        </div>
+
+                        <div class="mb-3" id="div_municipi_wrapper">
+                            <label class="form-label">Municipi</label>
+                            <select class="form-select" id="municipi_select" name="municipi_select" multiple style="width: 100%;" disabled>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 4. Tipus de Cita -->
+                <h5 class="mb-3">4. Tipus de Cita</h5>
+                <div class="mb-4">
+                    <select class="form-select" name="appt_type">
+                        <option value="person" {% if last_appt_type == 'person' %}selected{% endif %}>Presencial</option>
+                        <option value="phone" {% if last_appt_type == 'phone' %}selected{% endif %}>Telefònica</option>
+                    </select>
+                </div>
+
+                <!-- 5. Recurrència -->
+                <h5 class="mb-3">5. Recurrència de la cerca</h5>
+                <div class="mb-4">
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="radio" name="freq_type" id="freq_once" value="once" {% if last_freq_type == 'once' %}checked{% endif %} onclick="toggleFreqOptions()">
+                        <label class="form-check-label" for="freq_once">
+                            Una sola vegada (Aturar al final)
+                        </label>
+                    </div>
+                    
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="radio" name="freq_type" id="freq_interval" value="interval" {% if last_freq_type == 'interval' %}checked{% endif %} onclick="toggleFreqOptions()">
+                        <label class="form-check-label" for="freq_interval">
+                            Cada X hores
+                        </label>
+                        <!-- Indented input -->
+                        <div id="freq_options_interval" style="display:none; margin-left: 1.5rem; margin-top: 0.5rem; max-width: 200px;">
+                            <div class="input-group input-group-sm">
                                 <span class="input-group-text">Cada</span>
                                 <input type="number" class="form-control" name="interval_hours" min="1" max="24" value="{{ last_interval }}">
                                 <span class="input-group-text">hores</span>
                             </div>
                         </div>
+                    </div>
 
-                        <div id="freq_options_daily" style="display:none;" class="mt-2">
-                            <div class="input-group">
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="radio" name="freq_type" id="freq_daily" value="daily" {% if last_freq_type == 'daily' %}checked{% endif %} onclick="toggleFreqOptions()">
+                        <label class="form-check-label" for="freq_daily">
+                            Cada dia a una hora concreta
+                        </label>
+                         <!-- Indented input -->
+                        <div id="freq_options_daily" style="display:none; margin-left: 1.5rem; margin-top: 0.5rem; max-width: 200px;">
+                            <div class="input-group input-group-sm">
                                 <span class="input-group-text">Hora</span>
                                 <input type="time" class="form-control" name="daily_time" value="{{ last_daily_time }}">
                             </div>
                         </div>
-                        
-                        <div class="alert alert-warning mt-2 py-1 px-2" style="font-size: 0.85rem;">
-                            <i class="bi bi-exclamation-triangle"></i> Atenció: Si selecciones molts codis postals, una volta completa pot trigar fins a 15 minuts.
-                        </div>
                     </div>
                 </div>
+
                 <button type="submit" class="btn btn-primary w-100" id="submitBtn" {% if has_active_search %}disabled{% endif %}>
                     {% if has_active_search %}
                         Ja hi ha una cerca en curs
@@ -333,10 +343,8 @@
             toggleFreqOptions();
 
             if (lastCommunity && lastCommunity.length > 0) {
-                // Set community value without triggering change yet to avoid async issues
                 $('#community').val(lastCommunity).trigger('change.select2');
                 
-                // Manually trigger the logic of onCommunityChange but waiting for results
                 const select = document.getElementById('community');
                 currentCommunities = getSelectValues(select);
                 const scopeContainer = document.getElementById('scope_container');
@@ -345,30 +353,17 @@
                     scopeContainer.style.display = 'block';
                     const isCatSelected = currentCommunities.some(c => CATALUNYA_NAMES.includes(c));
                     
-                    // Toggle Comarca visibility logic
-                    const comarcaRadio = document.getElementById('scope_comarca');
-                    const comarcaLabel = document.getElementById('label_scope_comarca');
                     if (isCatSelected) {
-                        comarcaRadio.disabled = false;
-                        comarcaLabel.classList.remove('disabled');
-                        comarcaLabel.style.display = 'inline-block';
-                        comarcaRadio.style.display = 'inline-block'; 
+                        $('#div_comarca_wrapper').show();
                     } else {
-                        comarcaRadio.disabled = true;
-                        comarcaLabel.classList.add('disabled');
-                        comarcaLabel.style.display = 'none';
-                        comarcaRadio.style.display = 'none';
+                        $('#div_comarca_wrapper').hide();
                     }
 
-                    // Load Provinces and wait
                     await loadProvinces(currentCommunities);
-                    
-                    // Restore Provinces
                     if (lastProvinces && lastProvinces.length > 0) {
                         $('#provincia_select').val(lastProvinces).trigger('change.select2');
                     }
 
-                    // Load Comarcas (if needed)
                     if (isCatSelected) {
                         await loadComarcas();
                         if (lastComarques && lastComarques.length > 0) {
@@ -376,21 +371,31 @@
                         }
                     }
                     
-                    // Restore Scope
-                    if (lastScope) {
-                        $(`input[name="scope"][value="${lastScope}"]`).prop('checked', true);
-                        showScope(lastScope);
+                    // Restore Scope Mode
+                    if (lastScope === 'zip') {
+                        $('#mode_zip').prop('checked', true);
+                        toggleScopeMode('zip');
+                    } else {
+                        $('#mode_location').prop('checked', true);
+                        toggleScopeMode('location');
                     }
 
-                    // Load Municipios if needed
-                    if (lastScope === 'municipi') {
-                        await loadMunicipios();
-                        if (lastMunicipis && lastMunicipis.length > 0) {
+                    if (lastScope === 'municipi' || lastScope === 'comarca' || lastScope === 'provincia' || lastScope === 'all_community') {
+                         await loadMunicipios();
+                         if (lastMunicipis && lastMunicipis.length > 0) {
                             $('#municipi_select').val(lastMunicipis).trigger('change.select2');
                         }
                     }
+                    
+                    // Trigger update to set hidden radios
+                    if (lastScope !== 'zip') {
+                        updateLocationScope();
+                    }
                 }
             }
+            
+            // Trigger time estimate if zip has value
+            updateZipTimeEstimate();
         }
 
         function getSelectValues(select) {
@@ -408,65 +413,89 @@
             if (currentCommunities.length > 0 && currentCommunities[0] !== "") {
                 scopeContainer.style.display = 'block';
                 
-                // Check if Catalunya is selected
                 const isCatSelected = currentCommunities.some(c => CATALUNYA_NAMES.includes(c));
                 
-                // Toggle Comarca visibility
-                const comarcaRadio = document.getElementById('scope_comarca');
-                const comarcaLabel = document.getElementById('label_scope_comarca');
-                
                 if (isCatSelected) {
-                    comarcaRadio.disabled = false;
-                    comarcaLabel.classList.remove('disabled');
-                    comarcaLabel.style.display = 'inline-block';
-                    comarcaRadio.style.display = 'inline-block'; 
+                    $('#div_comarca_wrapper').show();
                     loadComarcas();
                 } else {
-                    comarcaRadio.disabled = true;
-                    comarcaLabel.classList.add('disabled');
-                    comarcaLabel.style.display = 'none';
-                    comarcaRadio.style.display = 'none';
-                    // If comarca was selected, switch to all
-                    if (comarcaRadio.checked) {
-                        document.getElementById('scope_all').checked = true;
-                        showScope('all_community');
-                    }
+                    $('#div_comarca_wrapper').hide();
+                    $('#comarca_select').val(null).trigger('change');
                 }
 
-                // Load Provinces
                 loadProvinces(currentCommunities);
                 
                 // Reset downstream
                 $('#municipi_select').empty().trigger('change');
                 $('#municipi_select').prop('disabled', true);
+                
+                // Update scope
+                if ($('#mode_location').is(':checked')) {
+                    updateLocationScope();
+                }
 
             } else {
                 scopeContainer.style.display = 'none';
-                document.querySelectorAll('.scope-section').forEach(el => el.style.display = 'none');
             }
         }
 
-        function showScope(scope) {
-            document.querySelectorAll('.scope-section').forEach(el => el.style.display = 'none');
+        function toggleScopeMode(mode) {
+            if (mode === 'zip') {
+                $('#section_zip_input').show();
+                $('#section_location_selectors').hide();
+                $('#scope_zip').prop('checked', true);
+            } else {
+                $('#section_zip_input').hide();
+                $('#section_location_selectors').show();
+                updateLocationScope();
+            }
+        }
+
+        function updateLocationScope() {
+            const municipis = $('#municipi_select').val();
+            const comarques = $('#comarca_select').val();
+            const provincies = $('#provincia_select').val();
+
+            if (municipis && municipis.length > 0) {
+                $('#scope_municipi').prop('checked', true);
+            } else if (comarques && comarques.length > 0) {
+                $('#scope_comarca').prop('checked', true);
+            } else if (provincies && provincies.length > 0) {
+                $('#scope_provincia').prop('checked', true);
+            } else {
+                $('#scope_all').prop('checked', true);
+            }
+        }
+
+        function updateZipTimeEstimate() {
+            const input = document.getElementById('zip_code_input').value;
+            const zips = input.split(',').filter(s => s.trim().length > 0);
+            const count = zips.length;
             
-            if (scope === 'zip') {
-                document.getElementById('div_zip').style.display = 'block';
-            } else if (scope === 'municipi') {
-                // Show filters for municipality
-                document.getElementById('div_provincia').style.display = 'block';
-                
-                // Show comarca filter only if Cat is selected
-                const isCatSelected = currentCommunities.some(c => CATALUNYA_NAMES.includes(c));
-                if (isCatSelected) {
-                    document.getElementById('div_comarca').style.display = 'block';
+            const alertBox = document.getElementById('zip_time_alert');
+            const alertText = document.getElementById('zip_time_text');
+            
+            if (count > 0) {
+                // Estimate: 15 seconds per zip
+                const seconds = count * 15;
+                let timeStr = "";
+                if (seconds < 60) {
+                    timeStr = seconds + " segons";
+                } else {
+                    const mins = Math.ceil(seconds / 60);
+                    timeStr = mins + " minuts";
                 }
                 
-                document.getElementById('div_municipi').style.display = 'block';
-            } else if (scope === 'comarca') {
-                document.getElementById('div_provincia').style.display = 'block';
-                document.getElementById('div_comarca').style.display = 'block';
-            } else if (scope === 'provincia') {
-                document.getElementById('div_provincia').style.display = 'block';
+                alertText.innerText = `Temps estimat per volta: ~${timeStr} (${count} codis postals)`;
+                alertBox.style.display = 'block';
+                
+                if (count > 10) {
+                    alertBox.className = "alert alert-danger mt-2 py-1 px-2";
+                } else {
+                    alertBox.className = "alert alert-info mt-2 py-1 px-2";
+                }
+            } else {
+                alertBox.style.display = 'none';
             }
         }
 
