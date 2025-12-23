@@ -4,3 +4,4 @@ webdriver-manager
 python-dotenv
 schedule
 Flask-Mail
+gunicorn

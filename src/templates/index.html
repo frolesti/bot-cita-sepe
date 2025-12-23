@@ -149,8 +149,12 @@
                         </div>
                     </div>
                 </div>
-                <button type="submit" class="btn btn-primary w-100" id="submitBtn">
-                    Iniciar Monitoratge
+                <button type="submit" class="btn btn-primary w-100" id="submitBtn" {% if has_active_search %}disabled{% endif %}>
+                    {% if has_active_search %}
+                        Ja hi ha una cerca en curs
+                    {% else %}
+                        Iniciar Monitoratge
+                    {% endif %}
                 </button>
                 </fieldset>
             </form>
