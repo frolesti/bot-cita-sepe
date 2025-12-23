@@ -106,6 +106,7 @@ def check_single_zip(dni, data, zip_code):
             # ATURAR LA CERCA PER AQUEST DNI
             data['active'] = False
             data['status_message'] = f"Èxit! Cita a {zip_code}"
+            data['last_result_message'] = f"CITA TROBADA a {zip_code}!"
             logger.info(f"Aturant cerca automàtica per {dni} perquè l'usuari pugui gestionar la cita.")
 
             with app.app_context():
@@ -272,13 +273,16 @@ def background_checker():
                             logger.info(f"Cicle finalitzat per {dni} (Mode 'Una sola vegada'). Aturant.")
                             data['active'] = False
                             data['status_message'] = "Sense èxit"
+                            data['last_result_message'] = f"Finalitzat sense èxit ({len(data['zips'])} CPs comprovats)"
                         elif freq_type == 'interval':
                             interval_hours = float(data.get('interval_hours', 1))
                             next_run = datetime.fromtimestamp(now + (interval_hours * 3600)).strftime('%H:%M')
                             data['status_message'] = f"En pausa fins {next_run}"
+                            data['last_result_message'] = f"Última volta sense èxit ({len(data['zips'])} CPs comprovats)"
                         elif freq_type == 'daily':
                             daily_time_str = data.get('daily_time', '09:00')
                             data['status_message'] = f"En pausa fins demà a les {daily_time_str}"
+                            data['last_result_message'] = f"Última volta sense èxit ({len(data['zips'])} CPs comprovats)"
 
                 save_state()
                 
@@ -308,10 +312,37 @@ def index():
     last_dni = session.get('last_dni', '')
     last_email = session.get('last_email', '')
     
+    # Retrieve extended last used values
+    last_community = session.get('last_community', [])
+    last_scope = session.get('last_scope', '')
+    last_provinces = session.get('last_provinces', [])
+    last_comarques = session.get('last_comarques', [])
+    last_municipis = session.get('last_municipis', [])
+    last_zip_input = session.get('last_zip_input', '')
+    last_appt_type = session.get('last_appt_type', 'person')
+    last_freq_type = session.get('last_freq_type', 'once')
+    last_interval = session.get('last_interval', 1)
+    last_daily_time = session.get('last_daily_time', '09:00')
+    
     # Check if any search is active
     has_active_search = any(data['active'] for data in active_searches.values())
     
-    return render_template('index.html', searches=active_searches, communities=communities, last_dni=last_dni, last_email=last_email, has_active_search=has_active_search)
+    return render_template('index.html', 
+                           searches=active_searches, 
+                           communities=communities, 
+                           last_dni=last_dni, 
+                           last_email=last_email,
+                           last_community=last_community,
+                           last_scope=last_scope,
+                           last_provinces=last_provinces,
+                           last_comarques=last_comarques,
+                           last_municipis=last_municipis,
+                           last_zip_input=last_zip_input,
+                           last_appt_type=last_appt_type,
+                           last_freq_type=last_freq_type,
+                           last_interval=last_interval,
+                           last_daily_time=last_daily_time,
+                           has_active_search=has_active_search)
 
 # API endpoints per als desplegables dinàmics
 @app.route('/api/provinces')
@@ -352,12 +383,22 @@ def start_search():
     email = request.form.get('email')
     appt_type = request.form.get('appt_type')
     
+    community = request.form.getlist('community') # Multiple
+    scope = request.form.get('scope') # all_community, provincia, municipi, zip, comarca
+    
     # Save to session for persistence
     session['last_dni'] = dni
     session['last_email'] = email
-    
-    community = request.form.getlist('community') # Multiple
-    scope = request.form.get('scope') # all_community, provincia, municipi, zip, comarca
+    session['last_community'] = community
+    session['last_scope'] = scope
+    session['last_provinces'] = request.form.getlist('provincia_select')
+    session['last_comarques'] = request.form.getlist('comarca_select')
+    session['last_municipis'] = request.form.getlist('municipi_select')
+    session['last_zip_input'] = request.form.get('zip_code_input')
+    session['last_appt_type'] = appt_type
+    session['last_freq_type'] = request.form.get('freq_type')
+    session['last_interval'] = request.form.get('interval_hours')
+    session['last_daily_time'] = request.form.get('daily_time')
     
     # Determinar el valor segons l'scope
     value = None
@@ -434,7 +475,8 @@ def start_search():
             'interval_hours': interval_hours,
             'daily_time': daily_time,
             'last_cycle_time': 0,
-            'status_message': "Iniciant..."
+            'status_message': "Iniciant...",
+            'last_result_message': "Pendent de primera execució"
         }
         save_state() # Guardem la nova cerca
         flash(f"Cerca iniciada per al DNI {dni}. Zona: {scope_name} ({len(zips_to_check)} codis postals)")
@@ -461,7 +503,8 @@ def get_status():
             'current_index': data['current_zip_index'], # 0-based internally, but represents "next to check"
             'active': data['active'],
             'last_duration': data.get('last_duration', 'N/A'),
-            'status_message': data.get('status_message', '')
+            'status_message': data.get('status_message', ''),
+            'last_result_message': data.get('last_result_message', '')
         }
     return jsonify(status)
 
