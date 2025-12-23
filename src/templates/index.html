@@ -15,6 +15,12 @@
         .select2-container--default .select2-selection--single .select2-selection__arrow {
             height: 36px;
         }
+        /* Spinner animation */
+        .spinner-border-sm {
+            width: 1rem;
+            height: 1rem;
+            border-width: 0.2em;
+        }
     </style>
 </head>
 <body class="bg-light">
@@ -23,7 +29,9 @@
         
         <div class="card p-4 mb-4">
             <h3>Nova Cerca</h3>
+            
             <form action="/start" method="POST">
+                <fieldset>
                 <div class="row">
                     <div class="col-md-6 mb-3">
                         <label for="dni" class="form-label">DNI / NIE</label>
@@ -90,14 +98,61 @@
                     <input type="text" class="form-control" name="zip_code_input" placeholder="08001, 08002, 08003">
                 </div>
 
-                <div class="mb-3">
-                    <label class="form-label">Tipus de Cita</label>
-                    <select class="form-select" name="appt_type">
-                        <option value="person">Presencial</option>
-                        <option value="phone">Telefònica</option>
-                    </select>
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Tipus de Cita</label>
+                        <select class="form-select" name="appt_type">
+                            <option value="person">Presencial</option>
+                            <option value="phone">Telefònica</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Programació de la Cerca</label>
+                        <div class="mb-2">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="freq_type" id="freq_once" value="once" checked onclick="toggleFreqOptions()">
+                                <label class="form-check-label" for="freq_once">
+                                    Una sola vegada (Aturar al final)
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="freq_type" id="freq_interval" value="interval" onclick="toggleFreqOptions()">
+                                <label class="form-check-label" for="freq_interval">
+                                    Cada X hores
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="freq_type" id="freq_daily" value="daily" onclick="toggleFreqOptions()">
+                                <label class="form-check-label" for="freq_daily">
+                                    Cada dia a una hora concreta
+                                </label>
+                            </div>
+                        </div>
+
+                        <div id="freq_options_interval" style="display:none;" class="mt-2">
+                            <div class="input-group">
+                                <span class="input-group-text">Cada</span>
+                                <input type="number" class="form-control" name="interval_hours" min="1" max="24" value="1">
+                                <span class="input-group-text">hores</span>
+                            </div>
+                        </div>
+
+                        <div id="freq_options_daily" style="display:none;" class="mt-2">
+                            <div class="input-group">
+                                <span class="input-group-text">Hora</span>
+                                <input type="time" class="form-control" name="daily_time" value="09:00">
+                            </div>
+                        </div>
+                        
+                        <div class="alert alert-warning mt-2 py-1 px-2" style="font-size: 0.85rem;">
+                            <i class="bi bi-exclamation-triangle"></i> Atenció: Si selecciones molts codis postals, una volta completa pot trigar fins a 15 minuts.
+                        </div>
+                    </div>
                 </div>
-                <button type="submit" class="btn btn-primary w-100">Iniciar Monitoratge</button>
+                <button type="submit" class="btn btn-primary w-100" id="submitBtn">
+                    Iniciar Monitoratge
+                </button>
+                </fieldset>
             </form>
         </div>
 
@@ -129,18 +184,43 @@
                         <td>{{ dni }}</td>
                         <td>
                             <strong>{{ data.scope_name }}</strong><br>
-                            <small class="text-muted">Rotant: {{ data.zips[data.current_zip_index] }}</small>
+                            <small class="text-muted">
+                                {% if data.freq_type == 'once' %}
+                                    Mode: Una sola vegada
+                                {% elif data.freq_type == 'interval' %}
+                                    Mode: Cada {{ data.interval_hours }} hores
+                                {% elif data.freq_type == 'daily' %}
+                                    Mode: Diari a les {{ data.daily_time }}
+                                {% else %}
+                                    Mode: Desconegut
+                                {% endif %}
+                                <br>
+                                <span class="last-duration text-info" style="font-size: 0.85em;">
+                                    {% if data.last_duration %}
+                                        Última volta: {{ data.last_duration }}
+                                    {% endif %}
+                                </span>
+                            </small>
                         </td>
                         <td>{{ 'Presencial' if data.type == 'person' else 'Telefònica' }}</td>
                         <td>
                             {% if data.active %}
-                                <span class="badge bg-success">Cercant...</span>
+                                <span class="badge bg-success">
+                                    <span class="spinner-grow spinner-grow-sm" role="status" aria-hidden="true" style="width: 0.5rem; height: 0.5rem;"></span>
+                                    {{ data.status_message or 'Cercant...' }}
+                                </span>
                             {% else %}
-                                <span class="badge bg-secondary">Aturat</span>
+                                {% if 'Èxit' in (data.status_message or '') %}
+                                    <span class="badge bg-success">{{ data.status_message }}</span>
+                                {% elif 'Sense èxit' in (data.status_message or '') or 'Finalitzat' in (data.status_message or '') %}
+                                    <span class="badge bg-warning text-dark">{{ data.status_message }}</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">{{ data.status_message or 'Aturat' }}</span>
+                                {% endif %}
                             {% endif %}
                         </td>
                         <td>
-                            <a href="/stop/{{ dni }}" class="btn btn-danger btn-sm">Aturar</a>
+                            <a href="/stop/{{ dni }}" class="btn btn-danger btn-sm">Aturar/Esborrar</a>
                         </td>
                     </tr>
                     {% endfor %}
@@ -155,6 +235,12 @@
         let currentCommunities = [];
         const CATALUNYA_NAMES = ['Cataluña', 'Catalunya']; // Adjust based on backend data
 
+        function toggleFreqOptions() {
+            const type = document.querySelector('input[name="freq_type"]:checked').value;
+            document.getElementById('freq_options_interval').style.display = (type === 'interval') ? 'block' : 'none';
+            document.getElementById('freq_options_daily').style.display = (type === 'daily') ? 'block' : 'none';
+        }
+
         $(document).ready(function() {
             // Initialize Select2
             $('#community').select2({
@@ -167,6 +253,7 @@
                 closeOnSelect: false,
                 allowClear: true
             });
+
 
             $('#comarca_select').select2({
                 placeholder: "Tria una o més comarques...",
@@ -381,11 +468,16 @@
         });
 
         // Actualització dinàmica de l'estat de les cerques
+        let statusInterval;
+
         function updateSearchStatus() {
             fetch('/api/status')
                 .then(response => response.json())
                 .then(data => {
+                    let anyActive = false;
                     for (const [dni, status] of Object.entries(data)) {
+                        if (status.active) anyActive = true;
+
                         // Busquem la fila corresponent al DNI
                         // Com que no tenim IDs a les files, busquem pel text de la primera cel·la
                         $('table tbody tr').each(function() {
@@ -394,18 +486,57 @@
                                 // Actualitzem la cel·la de Zona / CP Actual
                                 const statusCell = $(this).find('td:nth-child(2) small');
                                 if (statusCell.length) {
-                                    statusCell.text(`Rotant: ${status.current_zip} [${status.current_index}/${status.total_zips}]`);
+                                    // Preservem el text original de la freqüència i només actualitzem el CP i la durada
+                                    let html = statusCell.html();
+                                    // Simple regex replace per actualitzar el CP visible si cal, o reconstruïm
+                                    // Més fàcil: actualitzem el text del CP i afegim/actualitzem el span de durada
+                                    
+                                    // Actualitzem el text "Rotant: XXXXX"
+                                    // Busquem el node de text que conté "Rotant:"
+                                    statusCell.contents().filter(function() {
+                                        return this.nodeType === 3 && this.nodeValue.includes('Rotant:');
+                                    }).each(function() {
+                                        this.nodeValue = `Rotant: ${status.current_zip} [${status.current_index}/${status.total_zips}] `;
+                                    });
+
+                                    // Actualitzem la durada
+                                    let durationSpan = statusCell.find('.last-duration');
+                                    if (durationSpan.length === 0) {
+                                        statusCell.append('<br><span class="last-duration text-info" style="font-size: 0.85em;"></span>');
+                                        durationSpan = statusCell.find('.last-duration');
+                                    }
+                                    if (status.last_duration && status.last_duration !== 'N/A') {
+                                        durationSpan.text(`Última volta: ${status.last_duration}`);
+                                    }
                                 }
                                 
                                 // Actualitzem l'estat (badge)
                                 const badgeCell = $(this).find('td:nth-child(4) span');
+                                const msg = status.status_message || '';
+                                
+                                badgeCell.removeClass('bg-success bg-secondary bg-warning text-dark');
+                                
                                 if (status.active) {
-                                    badgeCell.removeClass('bg-secondary').addClass('bg-success').text('Cercant...');
+                                    badgeCell.addClass('bg-success').html(
+                                        `<span class="spinner-grow spinner-grow-sm" role="status" aria-hidden="true" style="width: 0.5rem; height: 0.5rem;"></span> ${msg || 'Cercant...'}`
+                                    );
                                 } else {
-                                    badgeCell.removeClass('bg-success').addClass('bg-secondary').text('Aturat');
+                                    if (msg.includes('Èxit')) {
+                                        badgeCell.addClass('bg-success').text(msg);
+                                    } else if (msg.includes('Sense èxit') || msg.includes('Finalitzat')) {
+                                        badgeCell.addClass('bg-warning text-dark').text(msg);
+                                    } else {
+                                        badgeCell.addClass('bg-secondary').text(msg || 'Aturat');
+                                    }
                                 }
                             }
                         });
+                    }
+
+                    // Si no hi ha cap cerca activa, aturem el polling per estalviar recursos
+                    if (!anyActive && statusInterval) {
+                        console.log("Totes les cerques han finalitzat. Aturant monitoratge UI.");
+                        clearInterval(statusInterval);
                     }
                 })
                 .catch(err => console.error('Error fetching status:', err));
@@ -413,7 +544,9 @@
 
         // Executar cada 2 segons només si hi ha cerques a la taula
         if ($('table tbody tr').length > 0) {
-            setInterval(updateSearchStatus, 2000);
+            statusInterval = setInterval(updateSearchStatus, 2000);
+            // Executar immediatament per comprovar l'estat inicial
+            updateSearchStatus();
         }
     </script>
 </body>
