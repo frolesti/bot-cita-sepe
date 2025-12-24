@@ -30,6 +30,11 @@
         
         <div class="card p-4 mb-4">
             <h3>Nova Cerca</h3>
+            <p class="mb-4 text-muted">
+                Aquesta eina automatitza la cerca de cites al SEPE. Configura els paràmetres i el bot anirà comprovant la disponibilitat periòdicament segons la recurrència que triïs.
+                <br>
+                <strong>Important:</strong> En el moment que es trobi una cita lliure, rebràs un <strong>correu electrònic d'avís immediatament</strong> perquè puguis entrar a reservar-la.
+            </p>
             
             <form action="/start" method="POST">
                 <fieldset>
@@ -47,6 +52,7 @@
                     <div class="col-md-6 mb-3">
                         <label for="email" class="form-label">Email per notificar</label>
                         <input type="email" class="form-control" id="email" name="email" required placeholder="el_teu@email.com" value="{{ last_email }}">
+                        <div class="form-text text-primary"><i class="bi bi-envelope-exclamation"></i> T'enviarem un mail aquí quan trobem cita.</div>
                     </div>
                 </div>
 
