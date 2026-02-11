@@ -336,9 +336,11 @@ class SepeBot:
                     break
             
             if found_positive:
-                # Guardem HTML per si de cas
-                with open("debug_success_found.html", "w", encoding="utf-8") as f:
+                # Guardem HTML i captura de pantalla per verificació
+                timestamp = int(time.time())
+                with open(f"debug_success_{timestamp}.html", "w", encoding="utf-8") as f:
                     f.write(self.driver.page_source)
+                self.driver.save_screenshot(f"debug_screenshots/success_{timestamp}.png")
                 return True
             
             # Si no trobem ni positiu ni negatiu clar, som conservadors
@@ -347,12 +349,16 @@ class SepeBot:
             if len(self.driver.find_elements(By.NAME, "idOficina")) > 0 or \
                len(self.driver.find_elements(By.CLASS_NAME, "tablaOferta")) > 0:
                  logging.info("Resultat POSITIU detectat per elements HTML.")
+                 timestamp = int(time.time())
+                 self.driver.save_screenshot(f"debug_screenshots/success_elements_{timestamp}.png")
                  return True
 
             logging.warning("Resultat incert. No s'ha trobat ni error ni confirmació clara.")
-            # Guardem HTML per depurar
-            with open("debug_uncertain_result.html", "w", encoding="utf-8") as f:
+            # Guardem HTML i captura per depurar
+            timestamp = int(time.time())
+            with open(f"debug_uncertain_{timestamp}.html", "w", encoding="utf-8") as f:
                 f.write(self.driver.page_source)
+            self.driver.save_screenshot(f"debug_screenshots/uncertain_{timestamp}.png")
             
             return False # Per defecte, si no estem segurs, millor no alertar falsament
 

@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session
 from flask_mail import Mail, Message
-import threading
+import threading # Mantingut per si alguna altra funció ho usa puntualment, però no pel worker
 import time
 from datetime import datetime, timedelta
 import os
@@ -8,8 +8,8 @@ import random
 import json
 from concurrent.futures import ThreadPoolExecutor
 from dotenv import load_dotenv
-from src.sepe_bot import SepeBot
 from src.locations import LocationManager
+from src.common import load_state, save_state # Importem funcions compartides
 import sys
 import logging
 
@@ -48,266 +48,22 @@ import shutil
 import tempfile
 
 # Emmagatzematge en memòria
-# Estructura: 
-# { 
-#   'dni': { 
-#       'zips': ['08001', '08002', ...], 
-#       'current_zip_index': 0,
-#       'email': '...', 
-#       'type': '...', 
-#       'active': True,
-#       'scope_name': 'Barcelonès' 
-#   } 
-# }
-active_searches = {}
-STATE_FILE = os.path.join('data', 'state.json')
+# Estructura: { 'dni': { ... } }
+# Ara es carrega via load_state() des de src.common en iniciar
+active_searches = load_state()
 
-def save_state():
-    """Guarda l'estat de les cerques actives a un fitxer JSON de manera atòmica."""
-    try:
-        # Write to a temporary file first to prevent corruption on crash
-        fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(STATE_FILE), text=True)
-        with os.fdopen(fd, 'w', encoding='utf-8') as f:
-            json.dump(active_searches, f, ensure_ascii=False, indent=4)
-        # Atomic replacement
-        os.replace(tmp_path, STATE_FILE)
-    except Exception as e:
-        logger.error(f"Error guardant l'estat: {e}")
-        if 'tmp_path' in locals() and os.path.exists(tmp_path):
-            try:
-                os.remove(tmp_path)
-            except:
-                pass
+# Eliminem logica local de save_state/load_state ja que usem common.py
 
-def load_state():
-    """Carrega l'estat de les cerques actives des d'un fitxer JSON."""
-    global active_searches
-    if os.path.exists(STATE_FILE):
-        try:
-            with open(STATE_FILE, 'r', encoding='utf-8') as f:
-                active_searches = json.load(f)
-            logger.info(f"Estat carregat: {len(active_searches)} cerques actives recuperades.")
-        except Exception as e:
-            logger.error(f"Error carregant l'estat: {e}")
-            active_searches = {}
-
-# Carreguem l'estat inicial en arrencar
-load_state()
-
-def check_single_zip(dni, data, zip_code):
-    """Helper function to check a single zip code in a thread."""
-    try:
-        logger.info(f"--> [Thread] Comprovant DNI {dni} a CP {zip_code}")
-        bot = SepeBot(headless=True) # Headless activat per defecte
-        found = bot.check_appointment(zip_code, dni, data['type'])
-        
-        if found:
-            logger.info(f"!!! CITA TROBADA per {dni} a {zip_code} !!!")
-            # ATURAR LA CERCA PER AQUEST DNI
-            data['active'] = False
-            data['status_message'] = f"Èxit! Cita a {zip_code}"
-            data['last_result_message'] = f"CITA TROBADA a {zip_code}!"
-            logger.info(f"Aturant cerca automàtica per {dni} perquè l'usuari pugui gestionar la cita.")
-
-            with app.app_context():
-                try:
-                    msg = Message('¡CITA DISPONIBLE AL SEPE!', 
-                                sender=app.config['MAIL_USERNAME'], 
-                                recipients=[data['email']])
-                    
-                    msg.body = f"""Hola!
-
-El bot ha detectat una CITA DISPONIBLE al SEPE!
-
-Dades de la troballa:
----------------------
-DNI: {dni}
-Tipus de cita: {data['type']}
-Zona de cerca: {data['scope_name']}
-Codi Postal amb disponibilitat: {zip_code}
-
-Accedeix ràpidament a la web del SEPE per confirmar-la:
-https://sede.sepe.gob.es/portalSede/procedimientos-y-servicios/personas/proteccion-por-desempleo/cita-previa/cita-previa-solicitud.html
-
-Molta sort!
-Bot Cita SEPE
-"""
-                    mail.send(msg)
-                    logger.info(f"Correu enviat a {data['email']}")
-                except Exception as e_mail:
-                    logger.error(f"Error enviant mail: {e_mail}")
-            
-            # Si trobem cita, deixem el navegador obert (o el tanquem si volem, però millor deixar-lo si no fos headless)
-            # Com que és headless, el tanquem, l'usuari haurà d'entrar manualment.
-            bot.close()
-            return True
-        else:
-            logger.info(f"No s'ha trobat cita per {dni} a {zip_code}.")
-            bot.close()
-            return False
-    except Exception as e:
-        logger.error(f"Error comprovant per {dni} a {zip_code}: {e}")
-        try:
-            bot.close()
-        except:
-            pass
-        return False
-
-def background_checker():
-    """Funció que s'executa en segon pla per comprovar cites."""
-    logger.info("Iniciant fil de comprovació en segon pla...")
-    
-    # ThreadPoolExecutor per paral·lelitzar
-    try:
-        MAX_WORKERS = int(os.getenv('MAX_WORKERS', 3))
-    except ValueError:
-        MAX_WORKERS = 3
-    
-    logger.info(f"Iniciant cerca paral·lela amb {MAX_WORKERS} fils (workers)...")
-    
-    while True:
-        try:
-            count = len(active_searches)
-            if count > 0:
-                # logger.info(f"Comprovant {count} cerques actives...")
-                pass
-            
-            active_tasks = []
-            tasks_launched = False
-            
-            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                for dni, data in list(active_searches.items()):
-                    if not data['active'] or not data['zips']:
-                        continue
-
-                    # --- SCHEDULING LOGIC ---
-                    freq_type = data.get('freq_type', 'once')
-                    last_complete = data.get('last_cycle_time', 0)
-                    
-                    # Check if we are at the start of a cycle (waiting to start)
-                    if data['current_zip_index'] == 0 and last_complete > 0:
-                        now = time.time()
-                        
-                        if freq_type == 'once':
-                            # Should have stopped already, but just in case
-                            logger.info(f"Cerca {dni} finalitzada (mode 'Una sola vegada').")
-                            data['active'] = False
-                            data['status_message'] = "Sense èxit"
-                            save_state()
-                            continue
-                            
-                        elif freq_type == 'interval':
-                            interval_hours = float(data.get('interval_hours', 1))
-                            interval_seconds = interval_hours * 3600
-                            elapsed = now - last_complete
-                            
-                            if elapsed < interval_seconds:
-                                # Still waiting
-                                remaining_sec = interval_seconds - elapsed
-                                remaining_min = int(remaining_sec / 60)
-                                next_run = datetime.fromtimestamp(last_complete + interval_seconds).strftime('%H:%M')
-                                data['status_message'] = f"En pausa fins {next_run} ({remaining_min} min)"
-                                continue
-                            else:
-                                # Time to run again
-                                data['status_message'] = "Reactivant cerca..."
-                                
-                        elif freq_type == 'daily':
-                            daily_time_str = data.get('daily_time', '09:00')
-                            try:
-                                target_time = datetime.strptime(daily_time_str, '%H:%M').time()
-                                now_dt = datetime.now()
-                                last_run_dt = datetime.fromtimestamp(last_complete)
-                                
-                                # If we already ran today (and finished), wait for tomorrow
-                                if last_run_dt.date() == now_dt.date():
-                                    # Wait for tomorrow
-                                    data['status_message'] = f"En pausa fins demà a les {daily_time_str}"
-                                    continue
-                                
-                                # If we haven't ran today, check if it's time
-                                if now_dt.time() < target_time:
-                                    data['status_message'] = f"En pausa fins les {daily_time_str}"
-                                    continue
-                                    
-                                # It's time (or past time) and we haven't run today
-                                data['status_message'] = "Reactivant cerca..."
-                                
-                            except ValueError:
-                                logger.error(f"Invalid time format for {dni}: {daily_time_str}")
-                                data['active'] = False
-                                continue
-
-                    # --- EXECUTION LOGIC ---
-                    # If we are here, we should run checks
-                    data['status_message'] = f"Cercant... (Zona {data['current_zip_index'] + 1}/{len(data['zips'])})"
-                    
-                    num_parallel_zips = MAX_WORKERS
-                    cycle_completed_in_this_batch = False
-                    
-                    if data['current_zip_index'] == 0:
-                        data['current_cycle_start'] = time.time()
-
-                    for _ in range(num_parallel_zips):
-                        current_zip = data['zips'][data['current_zip_index']]
-                        
-                        future = executor.submit(check_single_zip, dni, data, current_zip)
-                        active_tasks.append(future)
-                        tasks_launched = True
-                        
-                        data['current_zip_index'] = (data['current_zip_index'] + 1) % len(data['zips'])
-                        
-                        if data['current_zip_index'] == 0:
-                            cycle_completed_in_this_batch = True
-                            break
-                    
-                    if cycle_completed_in_this_batch:
-                        now = time.time()
-                        data['last_cycle_time'] = now
-                        
-                        start_time = data.get('current_cycle_start', now)
-                        duration = now - start_time
-                        data['last_duration'] = f"{int(duration)} segons"
-                        
-                        if freq_type == 'once':
-                            logger.info(f"Cicle finalitzat per {dni} (Mode 'Una sola vegada'). Aturant.")
-                            data['active'] = False
-                            data['status_message'] = "Sense èxit"
-                            data['last_result_message'] = f"Finalitzat sense èxit ({len(data['zips'])} CPs comprovats)"
-                        elif freq_type == 'interval':
-                            interval_hours = float(data.get('interval_hours', 1))
-                            next_run = datetime.fromtimestamp(now + (interval_hours * 3600)).strftime('%H:%M')
-                            data['status_message'] = f"En pausa fins {next_run}"
-                            data['last_result_message'] = f"Última volta sense èxit ({len(data['zips'])} CPs comprovats)"
-                        elif freq_type == 'daily':
-                            daily_time_str = data.get('daily_time', '09:00')
-                            data['status_message'] = f"En pausa fins demà a les {daily_time_str}"
-                            data['last_result_message'] = f"Última volta sense èxit ({len(data['zips'])} CPs comprovats)"
-
-                save_state()
-                
-                for future in active_tasks:
-                    try:
-                        future.result(timeout=120)
-                    except Exception as e:
-                        logger.error(f"Error o Timeout en una tasca del thread pool: {e}")
-
-            if not tasks_launched:
-                time.sleep(5)
-            else:
-                time.sleep(1) 
-                
-        except Exception as e:
-            logger.error(f"Error general al background_checker: {e}")
-            time.sleep(60)
-
-# Iniciem el fil en segon pla
-checker_thread = threading.Thread(target=background_checker, daemon=True)
-checker_thread.start()
+# check_single_zip i background_checker han sigut moguts a src/worker.py per millorar arquitectura
 
 @app.route('/')
 def index():
+    # Recarreguem estat del disc per veure progrés del worker
+    global active_searches
+    active_searches = load_state()
+
     communities = LocationManager.get_communities()
+
     # Retrieve last used values from session
     last_dni = session.get('last_dni', '')
     last_email = session.get('last_email', '')
@@ -478,7 +234,7 @@ def start_search():
             'status_message': "Iniciant...",
             'last_result_message': "Pendent de primera execució"
         }
-        save_state() # Guardem la nova cerca
+        save_state(active_searches) # Guardem la nova cerca
         flash(f"Cerca iniciada per al DNI {dni}. Zona: {scope_name} ({len(zips_to_check)} codis postals)")
     
     return redirect(url_for('index'))
@@ -486,22 +242,22 @@ def start_search():
 @app.route('/api/status')
 def get_status():
     """Retorna l'estat actual de les cerques actives per actualitzar la UI dinàmicament."""
+    global active_searches
+    active_searches = load_state() # Refresquem per veure canvis del worker
     status = {}
     for dni, data in active_searches.items():
-        current_zip = "N/A"
-        if data['zips'] and len(data['zips']) > 0:
-            # Mostrem el rang de CPs que s'estan comprovant si n'hi ha més d'un en vol
-            idx = data['current_zip_index']
+        curr_zip = "N/A"
+        if data.get('zips') and len(data['zips']) > 0:
+            idx = data.get('current_zip_index', 0)
             total = len(data['zips'])
-            # Això és aproximat perquè l'índex ja ha avançat
-            prev_idx = (idx - 1) % total
-            current_zip = data['zips'][prev_idx]
+            prev_idx = (idx - 1) % total if total > 0 else 0
+            curr_zip = data['zips'][prev_idx]
         
         status[dni] = {
-            'current_zip': current_zip,
+            'current_zip': curr_zip,
             'total_zips': len(data['zips']),
-            'current_index': data['current_zip_index'], # 0-based internally, but represents "next to check"
-            'active': data['active'],
+            'current_index': data.get('current_zip_index', 0),
+            'active': data.get('active', False),
             'last_duration': data.get('last_duration', 'N/A'),
             'status_message': data.get('status_message', ''),
             'last_result_message': data.get('last_result_message', '')
@@ -509,12 +265,36 @@ def get_status():
     return jsonify(status)
 
 @app.route('/stop/<dni>')
-def stop_search(dni):
+def stop_search_web(dni):
+    global active_searches
+    active_searches = load_state()
     if dni in active_searches:
-        del active_searches[dni]
-        save_state() # Guardem l'eliminació
+        active_searches[dni]['active'] = False
+        active_searches[dni]['status_message'] = "Aturat manualment"
+        save_state(active_searches)
         flash(f"Cerca aturada per al DNI {dni}")
     return redirect(url_for('index'))
+
+@app.route('/api/stop/<dni>', methods=['POST'])
+def stop_search_api(dni):
+    global active_searches
+    active_searches = load_state()
+    if dni in active_searches:
+        active_searches[dni]['active'] = False
+        active_searches[dni]['status_message'] = "Aturat manualment"
+        save_state(active_searches)
+        return jsonify({'status': 'ok', 'message': 'Cerca aturada'})
+    return jsonify({'status': 'error', 'message': 'DNI no trobat'}), 404
+
+@app.route('/api/delete/<dni>', methods=['POST'])
+def delete_search_api(dni):
+    global active_searches
+    active_searches = load_state()
+    if dni in active_searches:
+        del active_searches[dni]
+        save_state(active_searches)
+        return jsonify({'status': 'ok', 'message': 'Cerca eliminada'})
+    return jsonify({'status': 'error', 'message': 'DNI no trobat'}), 404
 
 if __name__ == '__main__':
     app.run(debug=True)

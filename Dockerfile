@@ -8,11 +8,11 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Google Chrome
+# Install Google Chrome and Supervisor
 RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
     && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
     && apt-get update \
-    && apt-get install -y google-chrome-stable \
+    && apt-get install -y google-chrome-stable supervisor \
     && rm -rf /var/lib/apt/lists/*
 
 # Set up the working directory
@@ -25,12 +25,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application code
 COPY . .
 
+# Copy supervisord config
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
 # Create the data directory if it doesn't exist (for state.json)
 RUN mkdir -p data
 
 # Expose the port (Render will provide the PORT env var)
 EXPOSE 10000
 
-# Command to run the application using Gunicorn
-# We bind to 0.0.0.0 and the PORT environment variable provided by Render
-CMD gunicorn --bind 0.0.0.0:$PORT run:app
+# Start supervisor which will manage both Web and Worker
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
