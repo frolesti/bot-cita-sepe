@@ -7,4 +7,5 @@ venv/
 debug_*.html
 locations_cache.json
 data/state.json
+oracle.key
 

@@ -1,19 +1,19 @@
 FROM python:3.10-slim
 
-# Install system dependencies required for Chrome and Selenium
+# Install system dependencies required for Chromium and Selenium
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
     unzip \
     curl \
+    chromium \
+    chromium-driver \
+    supervisor \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Google Chrome and Supervisor
-RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg \
-    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
-    && apt-get update \
-    && apt-get install -y google-chrome-stable supervisor \
-    && rm -rf /var/lib/apt/lists/*
+# Set environment variables for Chromium
+ENV CHROME_BIN=/usr/bin/chromium
+ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver
 
 # Set up the working directory
 WORKDIR /app

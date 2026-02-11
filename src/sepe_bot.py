@@ -8,6 +8,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.support.ui import Select
 import time
 import logging
+import os
 
 # Configurem el logging
 # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -19,13 +20,7 @@ DRIVER_PATH = None
 class SepeBot:
     def __init__(self, headless=True):
         global DRIVER_PATH
-        if DRIVER_PATH is None:
-            try:
-                DRIVER_PATH = ChromeDriverManager().install()
-            except Exception as e:
-                logging.error(f"Error installing ChromeDriver: {e}")
-                raise e
-
+        
         options = webdriver.ChromeOptions()
         if headless:
             options.add_argument('--headless')
@@ -34,7 +29,27 @@ class SepeBot:
         options.add_argument('--disable-blink-features=AutomationControlled') # Per evitar detecció bàsica
         options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36")
 
-        self.driver = webdriver.Chrome(service=Service(DRIVER_PATH), options=options)
+        # Check for system installed chromedriver (Docker/Linux ARM)
+        system_chromedriver = os.environ.get('CHROMEDRIVER_PATH')
+        system_chrome_bin = os.environ.get('CHROME_BIN')
+
+        if system_chrome_bin:
+            options.binary_location = system_chrome_bin
+
+        if system_chromedriver and os.path.exists(system_chromedriver):
+            logging.info(f"Using system chromedriver at: {system_chromedriver}")
+            self.service = Service(system_chromedriver)
+        else:
+            # Fallback to ChromeDriverManager (Local Windows/Standard)
+            if DRIVER_PATH is None:
+                try:
+                    DRIVER_PATH = ChromeDriverManager().install()
+                except Exception as e:
+                    logging.error(f"Error installing ChromeDriver: {e}")
+                    raise e
+            self.service = Service(DRIVER_PATH)
+
+        self.driver = webdriver.Chrome(service=self.service, options=options)
         self.driver.set_page_load_timeout(45) # Timeout de 45 segons per carregar pàgines
         self.wait = WebDriverWait(self.driver, 20)
 
