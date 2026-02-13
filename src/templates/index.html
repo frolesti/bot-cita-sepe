@@ -8,6 +8,10 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
     <style>
+        body { min-height: 100vh; display: flex; flex-direction: column; }
+        .container { flex: 1; }
+        footer { margin-top: auto; }
+        
         .scope-section { display: none; }
         .select2-container .select2-selection--single {
             height: 38px; /* Match Bootstrap input height */
@@ -22,18 +26,39 @@
             height: 1rem;
             border-width: 0.2em;
         }
+        /* History popover */
+        .history-trigger { cursor: pointer; text-decoration: underline dotted; }
+        .history-popover {
+            display: none;
+            position: absolute;
+            z-index: 1050;
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            padding: 12px;
+            max-width: 350px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-size: 0.82rem;
+        }
+        .history-popover .history-entry {
+            padding: 4px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .history-popover .history-entry:last-child { border-bottom: none; }
     </style>
 </head>
 <body class="bg-light">
-    <div class="container mt-5 mb-5">
+    <div class="container my-3">
         <h1 class="text-center mb-4">Automatització Cita SEPE</h1>
         
-        <div class="card p-4 mb-4">
-            <h3>Nova Cerca</h3>
+        <div class="card p-3 mb-4">
+            <h3 class="text-center">Nova Cerca</h3>
             <p class="mb-4 text-muted">
-                Aquesta eina automatitza la cerca de cites al SEPE. Configura els paràmetres i el bot anirà comprovant la disponibilitat periòdicament segons la recurrència que triïs.
+                Fes servir aquesta eina per trobar una cita prèvia al SEPE. Configura els paràmetres i el bot anirà comprovant la disponibilitat periòdicament segons la recurrència, per als codis postals i pel DNI que indiquis.
                 <br>
-                <strong>Important:</strong> En el moment que es trobi una cita lliure, rebràs un <strong>correu electrònic d'avís immediatament</strong> perquè puguis entrar a reservar-la.
+                <strong>Important:</strong> En el moment que es trobi una cita lliure, rebràs un <strong>correu electrònic d'avís immediatament</strong> per a que puguis reservar-la de seguida. Tingues en compte que aquest bot només comprova la disponibilitat i no realitza la reserva automàtica, ja que no està permesa aquesta interacció fora de la pàgina oficial del SEPE. Per això és crucial que el correu que indiquis sigui un al qual tinguis accés ràpid i que revisis sovint després d'iniciar la cerca.
             </p>
             
             <form action="/start" method="POST">
@@ -142,7 +167,7 @@
                     <div class="form-check mb-2">
                         <input class="form-check-input" type="radio" name="freq_type" id="freq_interval" value="interval" {% if last_freq_type == 'interval' %}checked{% endif %} onclick="toggleFreqOptions()">
                         <label class="form-check-label" for="freq_interval">
-                            Cada X hores
+                            Cada tantes hores
                         </label>
                         <!-- Indented input -->
                         <div id="freq_options_interval" style="display:none; margin-left: 1.5rem; margin-top: 0.5rem; max-width: 200px;">
@@ -169,18 +194,17 @@
                     </div>
                 </div>
 
-                <button type="submit" class="btn btn-primary w-50 mx-auto d-block" id="submitBtn" {% if has_active_search %}disabled{% endif %}>
-                    {% if has_active_search %}
-                        Ja hi ha una cerca en curs
-                    {% else %}
-                        Iniciar Monitoratge
-                    {% endif %}
+                <button type="submit" class="btn btn-primary w-50 mx-auto d-block" id="submitBtn">
+                    Iniciar Monitoratge
                 </button>
+                <div id="dniDuplicateAlert" class="alert alert-warning mt-2 text-center" style="display:none;">
+                    <i class="bi bi-exclamation-triangle"></i> Ja existeix una cerca per a aquest DNI. Esborra-la primer.
+                </div>
                 </fieldset>
             </form>
         </div>
 
-        <div class="card p-4 mb-5">
+        <div class="card p-3 mb-4" id="active_searches_section">
             <h3>Cerques Actives</h3>
             {% with messages = get_flashed_messages() %}
                 {% if messages %}
@@ -192,6 +216,7 @@
                 {% endif %}
             {% endwith %}
 
+            <div class="table-responsive">
             <table class="table">
                 <thead>
                     <tr>
@@ -199,12 +224,13 @@
                         <th>Zona / CP Actual</th>
                         <th>Tipus</th>
                         <th>Estat</th>
+                        <th>Historial</th>
                         <th>Acció</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for dni, data in searches.items() %}
-                    <tr>
+                    <tr data-dni="{{ dni }}">
                         <td>{{ dni }}</td>
                         <td>
                             <strong>{{ data.scope_name }}</strong><br>
@@ -226,35 +252,57 @@
                                 </span>
                                 <br>
                                 <span class="last-result text-muted" style="font-size: 0.85em; font-style: italic;">
-                                    {% if data.last_result_message %}
-                                        {{ data.last_result_message }}
-                                    {% endif %}
                                 </span>
                             </small>
                         </td>
                         <td>{{ 'Presencial' if data.type == 'person' else 'Telefònica' }}</td>
                         <td>
                             {% if data.active %}
-                                <span class="badge bg-success">
+                                <span class="badge bg-success status-badge">
                                     <span class="spinner-grow spinner-grow-sm" role="status" aria-hidden="true" style="width: 0.5rem; height: 0.5rem;"></span>
                                     {{ data.status_message or 'Cercant...' }}
                                 </span>
                             {% else %}
-                                {% if 'Èxit' in (data.status_message or '') %}
-                                    <span class="badge bg-success">{{ data.status_message }}</span>
+                                {% if 'ÈXIT' in (data.status_message or '').upper() %}
+                                    <span class="badge bg-success status-badge">{{ data.status_message }}</span>
                                 {% elif 'Sense èxit' in (data.status_message or '') or 'Finalitzat' in (data.status_message or '') %}
-                                    <span class="badge bg-warning text-dark">{{ data.status_message }}</span>
+                                    <span class="badge bg-warning text-dark status-badge">{{ data.status_message }}</span>
                                 {% else %}
-                                    <span class="badge bg-secondary">{{ data.status_message or 'Aturat' }}</span>
+                                    <span class="badge bg-secondary status-badge">{{ data.status_message or 'Aturat' }}</span>
                                 {% endif %}
                             {% endif %}
                         </td>
                         <td>
-                            <a href="/stop/{{ dni }}" class="btn btn-danger btn-sm">Aturar/Esborrar</a>
+                            <div style="position: relative;">
+                                <span class="history-trigger text-primary" onclick="toggleHistory(event, '{{ dni }}')">
+                                    <i class="bi bi-clock-history"></i> <span class="history-count">0</span> exec.
+                                </span>
+                                <div class="history-popover" id="history-{{ dni }}">
+                                    <strong>Historial d'execucions</strong>
+                                    <hr class="my-1">
+                                    <div class="history-entries">
+                                        <small class="text-muted">Cap execució registrada.</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            {% set msg = data.status_message or '' %}
+                            {% set is_searching = data.active and 'En pausa' not in msg and 'Cicle completat' not in msg %}
+                            {% if is_searching %}
+                                <button class="btn btn-warning btn-sm action-btn" onclick="stopSearch('{{ dni }}')">
+                                    <i class="bi bi-pause-fill"></i> Aturar
+                                </button>
+                            {% else %}
+                                <button class="btn btn-danger btn-sm action-btn" onclick="deleteSearch('{{ dni }}')">
+                                    <i class="bi bi-trash"></i> Esborrar
+                                </button>
+                            {% endif %}
                         </td>
                     </tr>
                     {% endfor %}
                 </tbody>
+            </div> <!-- .table-responsive -->
             </table>
         </div>
     </div>
@@ -352,6 +400,13 @@
             $('#provincia_select').on('change', onProvinceChange);
             $('#comarca_select').on('change', onComarcaChange);
 
+
+            // Auto-scroll to active searches if any exists (better UX)
+            if ($('table tbody tr').length > 0) {
+                 $('html, body').animate({
+                    scrollTop: $("#active_searches_section").offset().top - 20
+                 }, 500);
+            }
             // Restore state if available
             restoreState();
         });
@@ -609,14 +664,174 @@
             if (!community || community === '') {
                 e.preventDefault();
                 alert('Has de seleccionar una Comunitat Autònoma per continuar.');
-                // Intentem obrir el desplegable perquè l'usuari ho vegi
                 $('#community').select2('open');
+                return false;
+            }
+            // Comprovar DNI duplicat al client
+            var dni = $('#dni').val().trim().toUpperCase();
+            var existingDnis = [];
+            $('table tbody tr[data-dni]').each(function() {
+                existingDnis.push($(this).attr('data-dni').toUpperCase());
+            });
+            if (existingDnis.includes(dni)) {
+                e.preventDefault();
+                $('#dniDuplicateAlert').fadeIn();
+                $('html, body').animate({ scrollTop: $('#dniDuplicateAlert').offset().top - 100 }, 300);
+                
+                // Amagar després de 5 segons
+                setTimeout(function() {
+                     $('#dniDuplicateAlert').fadeOut(1000);
+                }, 5000);
+                
                 return false;
             }
         });
 
-        // Actualització dinàmica de l'estat de les cerques
+        // --- DNI duplicate check on input - DISABLED IMMEDIATE FEEDBACK ---
+        // $('#dni').on('input', function() { ... });
+
+
+        // --- LocalStorage history management ---
+        function getHistory(dni) {
+            try {
+                var all = JSON.parse(localStorage.getItem('sepe_history') || '{}');
+                return all[dni] || [];
+            } catch(e) { return []; }
+        }
+        function addHistoryEntry(dni, entry) {
+            try {
+                var all = JSON.parse(localStorage.getItem('sepe_history') || '{}');
+                if (!all[dni]) all[dni] = [];
+                // Avoid duplicate entries for the same timestamp
+                var lastEntry = all[dni][all[dni].length - 1];
+                if (lastEntry && lastEntry.time === entry.time) return;
+                all[dni].push(entry);
+                // Keep max 100 entries per DNI
+                if (all[dni].length > 100) all[dni] = all[dni].slice(-100);
+                localStorage.setItem('sepe_history', JSON.stringify(all));
+            } catch(e) { console.error('Error saving history:', e); }
+        }
+        function clearHistory(dni) {
+            try {
+                var all = JSON.parse(localStorage.getItem('sepe_history') || '{}');
+                delete all[dni];
+                localStorage.setItem('sepe_history', JSON.stringify(all));
+            } catch(e) {}
+        }
+
+        function renderHistoryCounts() {
+            $('table tbody tr[data-dni]').each(function() {
+                var dni = $(this).attr('data-dni');
+                var entries = getHistory(dni);
+                $(this).find('.history-count').text(entries.length);
+            });
+        }
+
+        function toggleHistory(event, dni) {
+            event.stopPropagation();
+            var popover = document.getElementById('history-' + dni);
+            
+            // Close all other popovers
+            document.querySelectorAll('.history-popover').forEach(function(p) {
+                if (p.id !== 'history-' + dni) p.style.display = 'none';
+            });
+
+            if (popover.style.display === 'block') {
+                popover.style.display = 'none';
+                return;
+            }
+            
+            var entries = getHistory(dni);
+            var container = popover.querySelector('.history-entries');
+            
+            if (entries.length === 0) {
+                container.innerHTML = '<small class="text-muted">Cap execució registrada.</small>';
+            } else {
+                // Show most recent first
+                var html = entries.slice().reverse().map(function(e) {
+                    var icon = e.result === 'found' ? '🟢' : (e.result === 'no_results' ? '⚪' : '⚪');
+                    var title = e.scope || 'Zona desconeguda';
+                    var count = e.total ? '(' + e.total + ' CPs)' : '';
+                    
+                    return '<div class="history-entry">' + 
+                        icon + ' <strong>' + e.time + '</strong> — ' + title + ' ' + count +
+                        (e.message ? '<br><small class="text-muted">' + e.message + '</small>' : '') +
+                        '</div>';
+                }).join('');
+                container.innerHTML = html;
+            }
+            
+            popover.style.display = 'block';
+
+            // Smart positioning: check if it fits below
+            var rect = event.target.getBoundingClientRect();
+            var popoverRect = popover.getBoundingClientRect();
+            var spaceBelow = window.innerHeight - rect.bottom;
+            
+            if (spaceBelow < popoverRect.height && rect.top > popoverRect.height) {
+                 // Not enough space below, put it above
+                 // Reset bottom/top styles from CSS just in case, though it's absolute relative to parent usually
+                 // Actually this popover is absolute relative to the 'td' likely?
+                 // Let's assume parent is 'td' with position static? No, usually popover needs a positioned parent
+                 // For simplicity, let's use CSS translation or bottom: 100%
+                 popover.style.top = 'auto'; // Reset top
+                 popover.style.bottom = '100%'; 
+                 popover.style.marginBottom = '5px';
+            } else {
+                 popover.style.bottom = 'auto'; // Reset bottom
+                 popover.style.top = '100%';
+                 popover.style.marginTop = '5px';
+            }
+        }
+
+        // Close popovers when clicking elsewhere
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.history-trigger') && !e.target.closest('.history-popover')) {
+                document.querySelectorAll('.history-popover').forEach(function(p) {
+                    p.style.display = 'none';
+                });
+            }
+        });
+
+        // --- Stop / Delete actions ---
+        function stopSearch(dni) {
+            fetch('/api/stop/' + dni, { method: 'POST' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status === 'ok') {
+                        // Update in-place without reload
+                        var $row = $('tr[data-dni="' + dni + '"]');
+                        $row.find('.status-badge')
+                            .removeClass('bg-success bg-warning')
+                            .addClass('bg-secondary')
+                            .html('Aturat manualment');
+                        $row.find('.action-btn')
+                            .removeClass('btn-warning').addClass('btn-danger')
+                            .html('<i class="bi bi-trash"></i> Esborrar')
+                            .attr('onclick', "deleteSearch('" + dni + "')");
+                        $('#dni').trigger('input');
+                    }
+                })
+                .catch(err => console.error(err));
+        }
+        function deleteSearch(dni) {
+            if (!confirm('Segur que vols esborrar la cerca per al DNI ' + dni + '?')) return;
+            clearHistory(dni);
+            fetch('/api/delete/' + dni, { method: 'POST' })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status === 'ok') {
+                        // Remove row without reload
+                        $('tr[data-dni="' + dni + '"]').fadeOut(300, function() { $(this).remove(); });
+                        $('#dni').trigger('input');
+                    }
+                })
+                .catch(err => console.error(err));
+        }
+
+        // --- Actualització dinàmica de l'estat ---
         let statusInterval;
+        let prevStatus = {}; // Track previous status to detect changes
 
         function updateSearchStatus() {
             fetch('/api/status')
@@ -626,72 +841,120 @@
                     for (const [dni, status] of Object.entries(data)) {
                         if (status.active) anyActive = true;
 
-                        // Busquem la fila corresponent al DNI
-                        // Com que no tenim IDs a les files, busquem pel text de la primera cel·la
-                        $('table tbody tr').each(function() {
-                            const rowDni = $(this).find('td:first').text().trim();
-                            if (rowDni === dni) {
-                                // Actualitzem la cel·la de Zona / CP Actual
-                                const statusCell = $(this).find('td:nth-child(2) small');
-                                if (statusCell.length) {
-                                    // Preservem el text original de la freqüència i només actualitzem el CP i la durada
-                                    let html = statusCell.html();
-                                    // Simple regex replace per actualitzar el CP visible si cal, o reconstruïm
-                                    // Més fàcil: actualitzem el text del CP i afegim/actualitzem el span de durada
-                                    
-                                    // Actualitzem el text "Rotant: XXXXX"
-                                    // Busquem el node de text que conté "Rotant:"
-                                    statusCell.contents().filter(function() {
-                                        return this.nodeType === 3 && this.nodeValue.includes('Rotant:');
-                                    }).each(function() {
-                                        this.nodeValue = `Rotant: ${status.current_zip} [${status.current_index}/${status.total_zips}] `;
-                                    });
+                        // Detect state transitions for history logging
+                        var prev = prevStatus[dni];
+                        if (prev) {
+                            var now = new Date();
+                            var timeStr = now.toLocaleDateString('ca') + ' ' + now.toLocaleTimeString('ca', {hour:'2-digit', minute:'2-digit'});
+                            var entry = null;
 
-                                    // Actualitzem la durada
-                                    let durationSpan = statusCell.find('.last-duration');
-                                    if (durationSpan.length === 0) {
-                                        statusCell.append('<br><span class="last-duration text-info" style="font-size: 0.85em;"></span>');
-                                        durationSpan = statusCell.find('.last-duration');
-                                    }
-                                    if (status.last_duration && status.last_duration !== 'N/A') {
-                                        durationSpan.text(`Última volta: ${status.last_duration}`);
-                                    }
-
-                                    // Actualitzem el missatge de resultat
-                                    let resultSpan = statusCell.find('.last-result');
-                                    if (resultSpan.length === 0) {
-                                        statusCell.append('<br><span class="last-result text-muted" style="font-size: 0.85em; font-style: italic;"></span>');
-                                        resultSpan = statusCell.find('.last-result');
-                                    }
-                                    if (status.last_result_message) {
-                                        resultSpan.text(status.last_result_message);
-                                    }
-                                }
+                             // 1. Success found
+                            if (!prev.status_message.includes('ÈXIT') && status.status_message.includes('ÈXIT')) {
+                               entry = {
+                                    time: timeStr,
+                                    result: 'found',
+                                    scope: status.scope_name,
+                                    total: status.total_zips,
+                                    message: 'Cita trobada: ' + status.last_result_message
+                                };
+                            }
+                            // 2. Cycle Finished (Interval Pause, Daily Pause, or Once Finished)
+                            // Transition from "searching" (no pause/finish) to "paused/finished"
+                            else {
+                                var wasSearching = !prev.status_message.includes('En pausa') && !prev.status_message.includes('Finalit') && !prev.status_message.includes('Cicle completat');
+                                var isPausedOrFinished = status.status_message.includes('En pausa') || status.status_message.includes('Finalit') || status.status_message.includes('Cicle completat');
                                 
-                                // Actualitzem l'estat (badge)
-                                const badgeCell = $(this).find('td:nth-child(4) span');
-                                const msg = status.status_message || '';
-                                
-                                badgeCell.removeClass('bg-success bg-secondary bg-warning text-dark');
-                                
-                                if (status.active) {
-                                    badgeCell.addClass('bg-success').html(
-                                        `<span class="spinner-grow spinner-grow-sm" role="status" aria-hidden="true" style="width: 0.5rem; height: 0.5rem;"></span> ${msg || 'Cercant...'}`
-                                    );
-                                } else {
-                                    if (msg.includes('Èxit')) {
-                                        badgeCell.addClass('bg-success').text(msg);
-                                    } else if (msg.includes('Sense èxit') || msg.includes('Finalitzat')) {
-                                        badgeCell.addClass('bg-warning text-dark').text(msg);
-                                    } else {
-                                        badgeCell.addClass('bg-secondary').text(msg || 'Aturat');
-                                    }
+                                if (wasSearching && isPausedOrFinished) {
+                                     entry = {
+                                        time: timeStr,
+                                        result: 'no_results',
+                                        scope: status.scope_name,
+                                        total: status.total_zips,
+                                        message: 'No hi ha hagut resultats.'
+                                    };
                                 }
                             }
-                        });
+
+                            if (entry) {
+                                addHistoryEntry(dni, entry);
+                                renderHistoryCounts();
+                            }
+                        }
+
+                        var $row = $('tr[data-dni="' + dni + '"]');
+                        if ($row.length === 0) continue;
+
+                        // --- Update Zona / CP / last result ---
+                        var statusCell = $row.find('td:nth-child(2) small');
+                        if (statusCell.length) {
+                            // Update "Rotant: XXXXX" text node
+                            statusCell.contents().filter(function() {
+                                return this.nodeType === 3 && this.nodeValue.includes('Rotant:');
+                            }).each(function() {
+                                this.nodeValue = 'Rotant: ' + status.current_zip + ' [' + status.current_index + '/' + status.total_zips + '] ';
+                            });
+
+                            // Update duration
+                            var durationSpan = statusCell.find('.last-duration');
+                            if (durationSpan.length && status.last_duration && status.last_duration !== 'N/A') {
+                                durationSpan.text('Última volta: ' + status.last_duration);
+                            }
+
+                            // Update last result — show meaningful info, not "Pendent" once running
+                            var resultSpan = statusCell.find('.last-result');
+                            if (resultSpan.length) {
+                                if (status.last_result_message && !status.last_result_message.includes('Pendent')) {
+                                    resultSpan.text(status.last_result_message);
+                                } else if (status.current_index > 0) {
+                                    resultSpan.text('Comprovant CP ' + status.current_zip + '...');
+                                }
+                            }
+                        }
+                        
+                        // --- Update badge ---
+                        var badgeCell = $row.find('.status-badge');
+                        var msg = status.status_message || '';
+                        
+                        badgeCell.removeClass('bg-success bg-secondary bg-warning text-dark');
+                        
+                        if (status.active) {
+                            // Enhance "En pausa" messages to show next run time
+                            var displayMsg = msg;
+                            if (status.next_run_time && msg.includes('En pausa')) {
+                                displayMsg = 'Pròxima execució: ' + status.next_run_time;
+                            }
+                            badgeCell.addClass('bg-success').html(
+                                '<span class="spinner-grow spinner-grow-sm" role="status" aria-hidden="true" style="width: 0.5rem; height: 0.5rem;"></span> ' + (displayMsg || 'Cercant...')
+                            );
+                        } else {
+                            if (msg.toUpperCase().includes('ÈXIT')) {
+                                badgeCell.addClass('bg-success').text(msg);
+                            } else if (msg.includes('Sense èxit') || msg.includes('Finalitzat')) {
+                                badgeCell.addClass('bg-warning text-dark').text(msg);
+                            } else {
+                                badgeCell.addClass('bg-secondary').text(msg || 'Aturat');
+                            }
+                        }
+
+                        // --- Update action button ---
+                        var actionCell = $row.find('.action-btn');
+                        var isSearching = status.active && !msg.includes('En pausa') && !msg.includes('Cicle completat');
+                        if (isSearching) {
+                            actionCell.removeClass('btn-danger').addClass('btn-warning')
+                                .html('<i class="bi bi-pause-fill"></i> Aturar')
+                                .attr('onclick', "stopSearch('" + dni + "')");
+                        } else {
+                            actionCell.removeClass('btn-warning').addClass('btn-danger')
+                                .html('<i class="bi bi-trash"></i> Esborrar')
+                                .attr('onclick', "deleteSearch('" + dni + "')");
+                        }
                     }
 
-                    // Si no hi ha cap cerca activa, aturem el polling per estalviar recursos
+                    prevStatus = JSON.parse(JSON.stringify(data));
+
+                    // Update DNI duplicate check (in case a search was deleted externally)
+                    $('#dni').trigger('input');
+
                     if (!anyActive && statusInterval) {
                         console.log("Totes les cerques han finalitzat. Aturant monitoratge UI.");
                         clearInterval(statusInterval);
@@ -700,10 +963,12 @@
                 .catch(err => console.error('Error fetching status:', err));
         }
 
+        // Initialize history counts on page load
+        renderHistoryCounts();
+
         // Executar cada 2 segons només si hi ha cerques a la taula
         if ($('table tbody tr').length > 0) {
             statusInterval = setInterval(updateSearchStatus, 2000);
-            // Executar immediatament per comprovar l'estat inicial
             updateSearchStatus();
         }
     </script>
