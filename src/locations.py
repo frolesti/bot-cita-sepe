@@ -346,5 +346,20 @@ class LocationManager:
                 
                 if not found_for_v:
                     logger.warning(f"No s'han trobat CPs per al municipi '{v}' amb els filtres actuals.")
-                        
-        return list(set(zips))
+        
+        # Eliminar duplicats i ordenar
+        unique_zips = sorted(list(set(zips)))
+        
+        # Limitar a 50 codis postals ben distribuïts per optimitzar la cerca
+        MAX_ZIPS = 50
+        if len(unique_zips) > MAX_ZIPS:
+            logger.info(f"Reduint de {len(unique_zips)} a {MAX_ZIPS} codis postals (mostreig equidistant).")
+            # Seleccionar índexs equidistants (garantint el primer i l'últim)
+            sampled_zips = []
+            n_items = len(unique_zips)
+            for i in range(MAX_ZIPS):
+                idx = int(i * (n_items - 1) / (MAX_ZIPS - 1))
+                sampled_zips.append(unique_zips[idx])
+            return sampled_zips
+            
+        return unique_zips
