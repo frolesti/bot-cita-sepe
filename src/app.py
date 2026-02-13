@@ -240,7 +240,14 @@ def start_search():
             'last_result_message': "Pendent de primera execució"
         }
         save_state(active_searches) # Guardem la nova cerca
-        flash(f"Cerca iniciada per al DNI {dni}. Zona: {scope_name} ({len(zips_to_check)} codis postals)")
+        
+        # Missatge formatiuat per al flash
+        msg_html = f"""
+            <strong>Cerca iniciada correctament</strong><br>
+            <span class="text-muted">DNI:</span> <strong>{dni}</strong> &nbsp;|&nbsp; 
+            <span class="text-muted">Zona:</span> {scope_name} <span class="badge bg-light text-dark border"> {len(zips_to_check)} CPs </span>
+        """
+        flash(msg_html)
     
     return redirect(url_for('index'))
 
@@ -265,14 +272,38 @@ def get_status():
         last_complete = data.get('last_cycle_time', 0)
         is_active = data.get('active', False)
         
-        if is_active and last_complete > 0 and idx == 0:
-            if freq_type == 'interval':
+        if is_active and idx == 0 and (freq_type != 'once'):
+            next_dt = None
+            now = datetime.now()
+            
+            if freq_type == 'interval' and last_complete > 0:
                 interval_hours = float(data.get('interval_hours', 1))
                 next_ts = last_complete + (interval_hours * 3600)
-                next_run_time = datetime.fromtimestamp(next_ts).strftime('%H:%M')
+                next_dt = datetime.fromtimestamp(next_ts)
+                
             elif freq_type == 'daily':
                 daily_time_str = data.get('daily_time', '09:00')
-                next_run_time = daily_time_str
+                try:
+                    target_time = datetime.strptime(daily_time_str, '%H:%M').time()
+                    today_target = datetime.combine(now.date(), target_time)
+                    # Si l'hora ja ha passat avui, serà demà. P.ex: són les 17:00 i volem 09:00 -> Demà.
+                    # P.ex: són les 08:00 i volem 09:00 -> Avui.
+                    # Nota: si current_zip_index == 0, vol dir que estem en pausa esperant.
+                    if now > today_target:
+                        next_dt = today_target + timedelta(days=1)
+                    else:
+                        next_dt = today_target
+                except:
+                    pass
+
+            if next_dt:
+                time_str = next_dt.strftime('%H:%M')
+                if next_dt.date() == now.date():
+                    next_run_time = f"Avui {time_str}"
+                elif next_dt.date() == (now + timedelta(days=1)).date():
+                    next_run_time = f"Demà {time_str}"
+                else:
+                    next_run_time = next_dt.strftime('%d/%m %H:%M')
 
         status[dni] = {
             'current_zip': curr_zip,

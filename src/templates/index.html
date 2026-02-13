@@ -208,11 +208,15 @@
             <h3>Cerques Actives</h3>
             {% with messages = get_flashed_messages() %}
                 {% if messages %}
-                    <div class="alert alert-info">
-                        {% for message in messages %}
-                            <p class="mb-0">{{ message }}</p>
-                        {% endfor %}
-                    </div>
+                    {% for message in messages %}
+                        <div class="alert alert-success alert-dismissible fade show d-flex align-items-center mb-3 shadow-sm" role="alert" style="border-left: 5px solid #198754;">
+                            <i class="bi bi-check-circle-fill fs-4 me-3 text-success"></i>
+                            <div>
+                                {{ message|safe }}
+                            </div>
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        </div>
+                    {% endfor %}
                 {% endif %}
             {% endwith %}
 
@@ -744,11 +748,28 @@
             var entries = getHistory(dni);
             var container = popover.querySelector('.history-entries');
             
-            if (entries.length === 0) {
+            var html = '';
+
+            // Check if there is an active running search for this DNI
+            // Using prevStatus which stores the last polled state
+            if (typeof prevStatus !== 'undefined' && prevStatus[dni] && prevStatus[dni].active) {
+                var st = prevStatus[dni];
+                var msg = st.status_message || '';
+                // Consider it an "Active Run" if it's not paused/waiting for next cycle
+                if (!msg.includes('En pausa') && !msg.includes('Cicle completat') && !msg.includes('Finalit') && !msg.includes('ÈXIT')) {
+                    var progress = st.current_zip ? 'Comprovant ' + st.current_zip : 'Iniciant...';
+                    html += '<div class="history-entry bg-light border-start border-4 border-primary ps-2 mb-2">' + 
+                        '🔵 <strong>En curs</strong> — ' + (st.scope_name || 'Zona actual') + '<br>' +
+                        '<small class="text-primary">' + progress + '</small>' +
+                        '</div>';
+                }
+            }
+
+            if (entries.length === 0 && html === '') {
                 container.innerHTML = '<small class="text-muted">Cap execució registrada.</small>';
             } else {
                 // Show most recent first
-                var html = entries.slice().reverse().map(function(e) {
+                html += entries.slice().reverse().map(function(e) {
                     var icon = e.result === 'found' ? '🟢' : (e.result === 'no_results' ? '⚪' : '⚪');
                     var title = e.scope || 'Zona desconeguda';
                     var count = e.total ? '(' + e.total + ' CPs)' : '';
@@ -905,8 +926,9 @@
                             if (resultSpan.length) {
                                 if (status.last_result_message && !status.last_result_message.includes('Pendent')) {
                                     resultSpan.text(status.last_result_message);
-                                } else if (status.current_index > 0) {
-                                    resultSpan.text('Comprovant CP ' + status.current_zip + '...');
+                                } else {
+                                    // Removed "Comprovant CP..." text as per user request
+                                    resultSpan.text('');
                                 }
                             }
                         }
@@ -914,7 +936,14 @@
                         // --- Update badge ---
                         var badgeCell = $row.find('.status-badge');
                         var msg = status.status_message || '';
-                        
+
+                        // Add tooltip with progress details
+                        var progressText = '';
+                        if (status.current_zip && status.current_zip !== 'N/A') {
+                            progressText = 'Comprovant CP: ' + status.current_zip + ' [' + status.current_index + '/' + status.total_zips + ']';
+                        }
+                        badgeCell.attr('title', progressText);
+
                         badgeCell.removeClass('bg-success bg-secondary bg-warning text-dark');
                         
                         if (status.active) {
@@ -947,6 +976,20 @@
                             actionCell.removeClass('btn-warning').addClass('btn-danger')
                                 .html('<i class="bi bi-trash"></i> Esborrar')
                                 .attr('onclick', "deleteSearch('" + dni + "')");
+                        }
+                        
+                        // --- Update History Count (Active + Historic) ---
+                        var historyCount = getHistory(dni).length;
+                        var isRunActive = status.active && !msg.includes('En pausa') && !msg.includes('Cicle completat') && !msg.includes('Finalit');
+                        if (isRunActive) historyCount++;
+                        
+                        var histTrigger = $row.find('.history-trigger');
+                        histTrigger.find('.history-count').text(historyCount);
+                        
+                        if (isRunActive) {
+                            histTrigger.attr('title', 'Cerca en procés: ' + (status.current_zip || 'Iniciant...'));
+                        } else {
+                            histTrigger.attr('title', 'Veure historial d\'execucions');
                         }
                     }
 
