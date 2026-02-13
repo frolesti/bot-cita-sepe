@@ -143,9 +143,10 @@ def run_worker():
                                 if (now - last_complete) >= (interval_hours * 3600):
                                     should_run = True
                                 else:
-                                    # Update status only
-                                    remaining = int(((interval_hours * 3600) - (now - last_complete))/60)
-                                    data['status_message'] = f"En pausa ({remaining} min restants)"
+                                    # Calculate next run time
+                                    next_ts = last_complete + (interval_hours * 3600)
+                                    next_time = datetime.fromtimestamp(next_ts).strftime('%H:%M')
+                                    data['status_message'] = f"En pausa (pròxima: {next_time})"
                                     updates_made = True
                                     
                              elif freq_type == 'daily':

@@ -192,6 +192,11 @@ def start_search():
         scope_name = f"Comunitats: {', '.join(value)}"
 
     if dni and email and scope:
+        # Comprovar si ja existeix una cerca per a aquest DNI
+        if dni in active_searches:
+            flash(f"Error: Ja existeix una cerca activa per al DNI {dni}. Esborra-la primer per crear-ne una de nova.")
+            return redirect(url_for('index'))
+        
         # Obtenir la llista de ZIPS
         zips_to_check = LocationManager.get_zips(scope, value, extra_context)
         
@@ -247,20 +252,39 @@ def get_status():
     status = {}
     for dni, data in active_searches.items():
         curr_zip = "N/A"
-        if data.get('zips') and len(data['zips']) > 0:
-            idx = data.get('current_zip_index', 0)
-            total = len(data['zips'])
-            prev_idx = (idx - 1) % total if total > 0 else 0
-            curr_zip = data['zips'][prev_idx]
+        zips = data.get('zips', [])
+        idx = data.get('current_zip_index', 0)
+        if zips:
+            # Mostrem el zip que s'està comprovant (o el pròxim a comprovar)
+            safe_idx = idx if idx < len(zips) else 0
+            curr_zip = zips[safe_idx]
         
+        # Calcular pròxima execució
+        next_run_time = None
+        freq_type = data.get('freq_type', 'once')
+        last_complete = data.get('last_cycle_time', 0)
+        is_active = data.get('active', False)
+        
+        if is_active and last_complete > 0 and idx == 0:
+            if freq_type == 'interval':
+                interval_hours = float(data.get('interval_hours', 1))
+                next_ts = last_complete + (interval_hours * 3600)
+                next_run_time = datetime.fromtimestamp(next_ts).strftime('%H:%M')
+            elif freq_type == 'daily':
+                daily_time_str = data.get('daily_time', '09:00')
+                next_run_time = daily_time_str
+
         status[dni] = {
             'current_zip': curr_zip,
-            'total_zips': len(data['zips']),
-            'current_index': data.get('current_zip_index', 0),
-            'active': data.get('active', False),
+            'total_zips': len(zips),
+            'current_index': idx,
+            'active': is_active,
             'last_duration': data.get('last_duration', 'N/A'),
             'status_message': data.get('status_message', ''),
-            'last_result_message': data.get('last_result_message', '')
+            'last_result_message': data.get('last_result_message', ''),
+            'next_run_time': next_run_time,
+            'freq_type': freq_type,
+            'scope_name': data.get('scope_name', ''),
         }
     return jsonify(status)
 
