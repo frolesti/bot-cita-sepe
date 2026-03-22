@@ -60,20 +60,26 @@ def check_single_zip(dni, data, zip_code):
         # Recuperem tràmit ID si el tenim guardat (per defecte "158" si no hi és)
         tramite_id = data.get('tramite_id', '158')
         
-        found = bot.check_appointment(
+        # Suport multi-tipus: appt_types (llista) o fallback a type (string)
+        appt_types = data.get('appt_types', [data.get('type', 'person')])
+        
+        results = bot.check_appointment(
             zip_code=zip_code, 
             dni=dni, 
-            appt_type=data.get('type', 'person'),
+            appt_types=appt_types,
             tramite_id=tramite_id
         )
         
         bot.close()
         
-        if found:
-            logger.info(f"!!! CITA TROBADA per {dni} a {zip_code} !!!")
-            return True, zip_code
-        else:
-            return False, None
+        # Mirar si algun tipus ha trobat cita
+        for appt_type, found in results.items():
+            if found:
+                type_name = 'Presencial' if appt_type == 'person' else 'Telefònica'
+                logger.info(f"!!! CITA {type_name} TROBADA per {dni} a {zip_code} !!!")
+                return True, zip_code, appt_type
+        
+        return False, None, None
             
     except Exception as e:
         logger.error(f"Error comprovant per {dni} a {zip_code}: {e}")
@@ -81,7 +87,7 @@ def check_single_zip(dni, data, zip_code):
             bot.close()
         except:
             pass
-        return False, None
+        return False, None, None
 
 def run_worker():
     logger.info("Iniciant Worker del Bot SEPE...")
@@ -131,14 +137,14 @@ def run_worker():
                             should_run = True # Primera vegada
                         else:
                             # Ja hem acabat almenys una volta, mirem temporització
-                             if freq_type == 'once':
+                            if freq_type == 'once':
                                 # Ja s'hauria d'haver marcat com inactiu, però per si de cas
                                 data['active'] = False
                                 data['status_message'] = "Finalitzat (mode 'una vegada')"
                                 updates_made = True
                                 should_run = False
                                 
-                             elif freq_type == 'interval':
+                            elif freq_type == 'interval':
                                 interval_hours = float(data.get('interval_hours', 1))
                                 if (now - last_complete) >= (interval_hours * 3600):
                                     should_run = True
@@ -149,7 +155,7 @@ def run_worker():
                                     data['status_message'] = f"En pausa (pròxima: {next_time})"
                                     updates_made = True
                                     
-                             elif freq_type == 'daily':
+                            elif freq_type == 'daily':
                                 daily_time_str = data.get('daily_time', '09:00')
                                 # Simplificació: si ja hem corregut avui, no correm més
                                 last_dt = datetime.fromtimestamp(last_complete)
@@ -189,29 +195,31 @@ def run_worker():
                 # Processar resultats dels fils
                 for future in futures:
                     dni, checked_zip = futures[future]
-                    found, success_zip = future.result()
+                    found, success_zip, found_type = future.result()
                     
-                    # Recarreguem estat per si ha canviat mentrestant (tot i que en single-thread worker loop és menys crític, 
-                    # però la Web pot haver modificat alguna cosa)
-                    # Per ara assumim que la Web només AFEGEIX o CANVIA 'active'.
-                    # Treballem amb la còpia 'active_searches' que tenim i sobreescriurem al final del loop.
-                    
+                    # Recarreguem estat per si ha canviat mentrestant
                     data = active_searches.get(dni)
                     if not data: continue # Potser s'ha esborrat
 
                     if found:
                         # !!! ÈXIT !!!
+                        type_name = 'Presencial' if found_type == 'person' else 'Telefònica'
                         data['active'] = False
-                        data['status_message'] = f"ÈXIT! Cita a {success_zip}"
-                        data['last_result_message'] = f"CITA DISPONIBLE DETECTADA EL {datetime.now().strftime('%d/%m %H:%M')}"
+                        data['status_message'] = f"ÈXIT! Cita {type_name} a {success_zip}"
+                        data['last_result_message'] = f"CITA {type_name} DISPONIBLE DETECTADA EL {datetime.now().strftime('%d/%m %H:%M')}"
                         data['last_cycle_time'] = time.time() # Marquem com acabat
+                        
+                        # Determinar tipus de cita per al correu
+                        appt_types = data.get('appt_types', [data.get('type', 'person')])
+                        types_str = ' i '.join(['Presencial' if t == 'person' else 'Telefònica' for t in appt_types])
                         
                         # Enviar Email
                         email_body = f"""El bot ha trobat una cita!
                         
 DNI: {dni}
 Codi Postal: {success_zip}
-Tipus: {data.get('type')}
+Tipus trobat: {type_name}
+Tipus cercats: {types_str}
 Zona: {data.get('scope_name')}
 
 Vés RÀPIDAMENT a la web del SEPE."""

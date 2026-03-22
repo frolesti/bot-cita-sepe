@@ -53,13 +53,22 @@ class SepeBot:
         self.driver.set_page_load_timeout(45) # Timeout de 45 segons per carregar pàgines
         self.wait = WebDriverWait(self.driver, 20)
 
-    def check_appointment(self, zip_code, dni, appt_type, tramite_id=None, subtramite_id=None):
+    def check_appointment(self, zip_code, dni, appt_types=None, tramite_id=None, subtramite_id=None):
         """
-        Retorna True si troba disponibilitat, False si no.
-        appt_type: 'person' (Presencial) o 'phone' (Telefònica)
+        Comprova la disponibilitat per un o múltiples tipus de cita en una sola sessió.
+        appt_types: llista com ['person', 'phone'] o ['person']. Per defecte ['person'].
+        Retorna: dict com {'person': True, 'phone': False}
         """
+        # Backward compatibility
+        if appt_types is None:
+            appt_types = ['person']
+        if isinstance(appt_types, str):
+            appt_types = [appt_types]
+        
+        results = {t: False for t in appt_types}
+        
         try:
-            logging.info(f"Iniciant comprovació per DNI: {dni}, CP: {zip_code}")
+            logging.info(f"Iniciant comprovació per DNI: {dni}, CP: {zip_code}, Tipus: {appt_types}")
             
             # 1. Accedir a la pàgina d'inici de la cita prèvia
             url = "https://sede.sepe.gob.es/portalSede/procedimientos-y-servicios/personas/proteccion-por-desempleo/cita-previa/cita-previa-solicitud.html"
@@ -254,132 +263,160 @@ class SepeBot:
                     logging.error(f"Error intentant clicar continuar: {e}")
 
             # 6. Comprovar disponibilitat
-            
-            # 6. Comprovar disponibilitat
-            # Un cop passat el captcha, mirem si hi ha missatge d'error o si ens deixa triar cita.
-            
             logging.debug("Analitzant resultat de la cerca...")
             time.sleep(2) # Esperem càrrega
             
-            # 6b. GESTIÓ DE LA PANTALLA "SELECCIONE EL CANAL"
-            # A vegades apareix una pantalla intermèdia on has de triar "Presencial" o "Telefónica"
-            try:
-                # Busquem si hi ha un selector de canal
-                # Sol ser un select amb id o name relacionat amb 'canal' o l'únic select visible
-                channel_selects = self.driver.find_elements(By.TAG_NAME, "select")
-                channel_select = None
-                
-                # Filtrem per trobar el bo (sovint té 'canal' al name o id, o és l'únic)
-                for s in channel_selects:
-                    if s.is_displayed() and ('canal' in s.get_attribute('name').lower() or 'canal' in s.get_attribute('id').lower()):
-                        channel_select = s
-                        break
-                
-                # Si no trobem per nom, mirem si hi ha un select visible i estem a la pantalla correcta
-                if not channel_select and "seleccione el canal" in self.driver.page_source.lower():
-                    for s in channel_selects:
-                        if s.is_displayed():
-                            channel_select = s
-                            break
-
-                if channel_select:
-                    logging.debug("Detectada pantalla de selecció de CANAL.")
-                    select_obj = Select(channel_select)
-                    
-                    # Mirem quines opcions hi ha
-                    options_text = [o.text.lower() for o in select_obj.options]
-                    logging.debug(f"Opcions de canal disponibles: {options_text}")
-                    
-                    target_text = "presencial" if appt_type == 'person' else "telefónica"
-                    if appt_type == 'phone': target_text = "telefonica" # Normalize
-                    
-                    found_option = False
-                    for index, text in enumerate(options_text):
-                        if target_text in text:
-                            select_obj.select_by_index(index)
-                            logging.debug(f"Canal '{text}' seleccionat.")
-                            found_option = True
+            # 6b. GESTIÓ DEL CANAL: comprovar cada tipus de cita sol·licitat
+            channel_select_elem = self._find_channel_selector()
+            
+            if channel_select_elem:
+                # Hi ha selector de canal — comprovem cada tipus
+                for i, appt_type in enumerate(appt_types):
+                    if i > 0:
+                        # Re-buscar el selector per si la pàgina ha canviat
+                        channel_select_elem = self._find_channel_selector()
+                        if not channel_select_elem:
+                            logging.warning("No s'ha pogut re-trobar el selector de canal per al següent tipus.")
                             break
                     
-                    if not found_option:
-                        # Si no trobem l'específic, potser només n'hi ha un de disponible?
-                        if len(select_obj.options) > 1:
-                            select_obj.select_by_index(1) # Seleccionem el primer que no sigui el placeholder
-                            logging.debug("Canal per defecte seleccionat (no s'ha trobat l'específic).")
+                    self._select_channel(channel_select_elem, appt_type)
+                    time.sleep(3)  # Esperem AJAX
                     
-                    # Esperem que la pàgina reaccioni a la selecció (AJAX)
-                    time.sleep(3)
-            except Exception as e:
-                logging.warning(f"Error gestionant selecció de canal (potser no calia): {e}")
-
-            # Re-llegim el source després de la possible interacció
-            page_source = self.driver.page_source.lower()
+                    found = self._check_page_result(zip_code, dni)
+                    results[appt_type] = found
+                    
+                    if found:
+                        type_name = 'Presencial' if appt_type == 'person' else 'Telefònica'
+                        logging.info(f"CITA {type_name} TROBADA per {dni} a {zip_code}!")
+            else:
+                # No hi ha selector de canal — el resultat val per tots els tipus
+                found = self._check_page_result(zip_code, dni)
+                for t in appt_types:
+                    results[t] = found
             
-            # Llista de frases que indiquen NO disponibilitat
-            negative_phrases = [
-                "no hay citas",
-                "no existe disponibilidad",
-                "no podemos ofrecerle cita",
-                "no podemos ofrecerle citas", # Plural
-                "el horario de atención",
-                "inténtelo de nuevo",
-                "no se han encontrado citas"
-            ]
-            
-            for phrase in negative_phrases:
-                if phrase in page_source:
-                    logging.debug(f"Resultat NEGATIU detectat per frase: '{phrase}'")
-                    return False
-            
-            # Si no trobem frases negatives, busquem indicadors positius FORTS
-            # Això evita falsos positius amb text genèric del footer/header
-            positive_indicators = [
-                "seleccione la oficina",
-                "seleccione el día",
-                "seleccione una oficina",
-                "listado de oficinas",
-                "citas disponibles",
-                "su cita ha sido reservada", # Molt optimista
-                "datos de la cita"
-            ]
-            
-            found_positive = False
-            for indicator in positive_indicators:
-                if indicator in page_source:
-                    logging.info(f"Resultat POSITIU detectat per indicador: '{indicator}'")
-                    found_positive = True
-                    break
-            
-            if found_positive:
-                # Guardem HTML i captura de pantalla per verificació
-                timestamp = int(time.time())
-                with open(f"debug_success_{timestamp}.html", "w", encoding="utf-8") as f:
-                    f.write(self.driver.page_source)
-                self.driver.save_screenshot(f"debug_screenshots/success_{timestamp}.png")
-                return True
-            
-            # Si no trobem ni positiu ni negatiu clar, som conservadors
-            # Però si hem passat el formulari i no hi ha error, potser és que sí.
-            # Mirem si hi ha elements de formulari nous
-            if len(self.driver.find_elements(By.NAME, "idOficina")) > 0 or \
-               len(self.driver.find_elements(By.CLASS_NAME, "tablaOferta")) > 0:
-                 logging.info("Resultat POSITIU detectat per elements HTML.")
-                 timestamp = int(time.time())
-                 self.driver.save_screenshot(f"debug_screenshots/success_elements_{timestamp}.png")
-                 return True
-
-            logging.warning("Resultat incert. No s'ha trobat ni error ni confirmació clara.")
-            # Guardem HTML i captura per depurar
-            timestamp = int(time.time())
-            with open(f"debug_uncertain_{timestamp}.html", "w", encoding="utf-8") as f:
-                f.write(self.driver.page_source)
-            self.driver.save_screenshot(f"debug_screenshots/uncertain_{timestamp}.png")
-            
-            return False # Per defecte, si no estem segurs, millor no alertar falsament
+            return results
 
         except Exception as e:
             logging.error(f"Error durant la comprovació: {e}")
+            return results
+
+    def _find_channel_selector(self):
+        """Busca el selector de canal (presencial/telefònica) a la pàgina."""
+        try:
+            channel_selects = self.driver.find_elements(By.TAG_NAME, "select")
+            
+            # Buscar per nom/id amb 'canal'
+            for s in channel_selects:
+                try:
+                    if s.is_displayed() and (
+                        'canal' in (s.get_attribute('name') or '').lower() or 
+                        'canal' in (s.get_attribute('id') or '').lower()
+                    ):
+                        return s
+                except:
+                    continue
+            
+            # Fallback: si la pàgina conté "seleccione el canal", agafar el primer select visible
+            if "seleccione el canal" in self.driver.page_source.lower():
+                for s in channel_selects:
+                    try:
+                        if s.is_displayed():
+                            return s
+                    except:
+                        continue
+        except Exception as e:
+            logging.debug(f"Error buscant selector de canal: {e}")
+        return None
+
+    def _select_channel(self, channel_select_elem, appt_type):
+        """Selecciona un canal (presencial/telefònica) al selector."""
+        try:
+            select_obj = Select(channel_select_elem)
+            options_text = [o.text.lower() for o in select_obj.options]
+            logging.debug(f"Opcions de canal disponibles: {options_text}")
+            
+            target_text = "presencial" if appt_type == 'person' else "telef\u00f3nica"
+            if appt_type == 'phone':
+                target_text = "telefonica"  # Sense accent per matching més flexible
+            
+            for index, text in enumerate(options_text):
+                if target_text in text or (appt_type == 'phone' and 'telef' in text):
+                    select_obj.select_by_index(index)
+                    type_name = 'Presencial' if appt_type == 'person' else 'Telefònica'
+                    logging.debug(f"Canal '{type_name}' seleccionat (opció: '{text}').")
+                    return True
+            
+            # Fallback: primer no-placeholder
+            if len(select_obj.options) > 1:
+                select_obj.select_by_index(1)
+                logging.debug("Canal per defecte seleccionat (no s'ha trobat l'específic).")
+            return True
+        except Exception as e:
+            logging.warning(f"Error seleccionant canal: {e}")
             return False
+
+    def _check_page_result(self, zip_code, dni):
+        """Comprova la pàgina actual per determinar si hi ha disponibilitat."""
+        time.sleep(2)
+        page_source = self.driver.page_source.lower()
+        
+        # Frases que indiquen NO disponibilitat
+        negative_phrases = [
+            "no hay citas",
+            "no existe disponibilidad",
+            "no podemos ofrecerle cita",
+            "no podemos ofrecerle citas",
+            "el horario de atenci\u00f3n",
+            "int\u00e9ntelo de nuevo",
+            "no se han encontrado citas"
+        ]
+        
+        for phrase in negative_phrases:
+            if phrase in page_source:
+                logging.debug(f"Resultat NEGATIU detectat per frase: '{phrase}'")
+                return False
+        
+        # Indicadors positius forts
+        positive_indicators = [
+            "seleccione la oficina",
+            "seleccione el d\u00eda",
+            "seleccione una oficina",
+            "listado de oficinas",
+            "citas disponibles",
+            "su cita ha sido reservada",
+            "datos de la cita"
+        ]
+        
+        for indicator in positive_indicators:
+            if indicator in page_source:
+                logging.info(f"Resultat POSITIU detectat per indicador: '{indicator}'")
+                self._save_debug_snapshot("success")
+                return True
+        
+        # Comprovar elements HTML de resultat positiu
+        if len(self.driver.find_elements(By.NAME, "idOficina")) > 0 or \
+           len(self.driver.find_elements(By.CLASS_NAME, "tablaOferta")) > 0:
+            logging.info("Resultat POSITIU detectat per elements HTML.")
+            self._save_debug_snapshot("success_elements")
+            return True
+
+        logging.warning("Resultat incert. No s'ha trobat ni error ni confirmació clara.")
+        self._save_debug_snapshot("uncertain")
+        return False
+
+    def _save_debug_snapshot(self, prefix):
+        """Guarda HTML i captura de pantalla per depuració."""
+        timestamp = int(time.time())
+        try:
+            with open(f"debug_{prefix}_{timestamp}.html", "w", encoding="utf-8") as f:
+                f.write(self.driver.page_source)
+        except:
+            pass
+        try:
+            os.makedirs("debug_screenshots", exist_ok=True)
+            self.driver.save_screenshot(f"debug_screenshots/{prefix}_{timestamp}.png")
+        except:
+            pass
 
     def close(self):
         try:

@@ -1,0 +1,15 @@
+# .gcloudignore — Only used by gcloud builds submit
+# Do NOT exclude data files needed at runtime
+
+.venv/
+__pycache__/
+*.pyc
+.env
+.git/
+.gitignore
+debug_*.html
+debug_screenshots/
+*.md
+tests/
+scripts/
+oracle.key
