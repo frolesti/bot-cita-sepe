@@ -307,6 +307,8 @@ def get_status():
             'next_run_time': next_run_time,
             'freq_type': freq_type,
             'scope_name': data.get('scope_name', ''),
+            'cycle_start_time': data.get('cycle_start_time'),
+            'finished_at': data.get('finished_at'),
         }
     return jsonify(status)
 
@@ -317,8 +319,24 @@ def stop_search_api(dni):
     if dni in active_searches:
         active_searches[dni]['active'] = False
         active_searches[dni]['status_message'] = "Aturat manualment"
+        active_searches[dni]['finished_at'] = datetime.now().strftime('%d/%m/%Y %H:%M')
         save_state(active_searches)
         return jsonify({'status': 'ok', 'message': 'Cerca aturada'})
+    return jsonify({'status': 'error', 'message': 'DNI no trobat'}), 404
+
+@app.route('/api/restart/<dni>', methods=['POST'])
+def restart_search_api(dni):
+    """Reinicia una cerca existent (reset index, reactivar)."""
+    active_searches = load_state()
+    if dni in active_searches:
+        active_searches[dni]['active'] = True
+        active_searches[dni]['current_zip_index'] = 0
+        active_searches[dni]['cycle_start_time'] = None
+        active_searches[dni]['finished_at'] = None
+        active_searches[dni]['status_message'] = 'Reiniciant...'
+        active_searches[dni]['last_cycle_time'] = 0
+        save_state(active_searches)
+        return jsonify({'status': 'ok', 'message': 'Cerca reiniciada'})
     return jsonify({'status': 'error', 'message': 'DNI no trobat'}), 404
 
 @app.route('/api/delete/<dni>', methods=['POST'])

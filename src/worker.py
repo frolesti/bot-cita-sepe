@@ -172,6 +172,10 @@ def run_worker():
                         continue
 
                     # --- EXECUCIÓ ---
+                    # Registrem inici de cicle si toca
+                    if data.get('current_zip_index', 0) == 0 and not data.get('cycle_start_time'):
+                        data['cycle_start_time'] = time.time()
+
                     # Agafem el següent ZIP a comprovar
                     zips = data['zips']
                     idx = data.get('current_zip_index', 0)
@@ -205,6 +209,7 @@ def run_worker():
                         # !!! ÈXIT !!!
                         type_name = 'Presencial' if found_type == 'person' else 'Telefònica'
                         data['active'] = False
+                        data['finished_at'] = datetime.now().strftime('%d/%m/%Y %H:%M')
                         data['status_message'] = f"ÈXIT! Cita {type_name} a {success_zip}"
                         data['last_result_message'] = f"CITA {type_name} DISPONIBLE DETECTADA EL {datetime.now().strftime('%d/%m %H:%M')}"
                         data['last_cycle_time'] = time.time() # Marquem com acabat
@@ -235,10 +240,12 @@ Vés RÀPIDAMENT a la web del SEPE."""
                         if data['current_zip_index'] >= len(data['zips']):
                             data['current_zip_index'] = 0 # Reset índex
                             data['last_cycle_time'] = time.time() # Marquem fi de cicle
+                            data['cycle_start_time'] = None  # Reset per al pròxim cicle
                             
                             # Si era 'once', marquem com acabadat
                             if data.get('freq_type') == 'once':
                                 data['active'] = False
+                                data['finished_at'] = datetime.now().strftime('%d/%m/%Y %H:%M')
                                 data['status_message'] = "Finalitzat sense èxit."
                             else:
                                 data['status_message'] = "Cicle completat. Esperant següent interval."
