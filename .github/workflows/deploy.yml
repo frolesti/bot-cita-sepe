@@ -8,33 +8,56 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
         with:
-          credentials_json: '${{ secrets.GCP_SA_KEY }}'
+          host: 34.175.19.126
+          username: ${{ secrets.VM_SSH_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          script_stop: true
+          command_timeout: 10m
+          script: |
+            set -e
+            REPO_DIR="$HOME/bot-cita-sepe"
+            REPO_URL="https://github.com/frolesti/bot-cita-sepe.git"
+            CONTAINER_NAME="sepe-bot-container"
+            IMAGE_NAME="sepe-bot"
 
-      - name: Set up gcloud CLI
-        uses: google-github-actions/setup-gcloud@v2
+            echo "=== DEPLOY START $(date) ==="
 
-      - name: Deploy to VM via SSH
-        run: |
-          gcloud compute ssh sepe-bot \
-            --zone=europe-southwest1-a \
-            --project=trobar-1123f \
-            --command="
-              cd /tmp && rm -rf bot-cita-sepe && \
-              git clone https://github.com/frolesti/bot-cita-sepe.git && \
-              cd bot-cita-sepe && \
-              docker build -t sepe-bot:latest . && \
-              docker stop sepe-bot || true && \
-              docker rm sepe-bot || true && \
-              docker run -d --name sepe-bot -p 10000:10000 \
-                -e MAIL_USERNAME=\${{ secrets.MAIL_USERNAME }} \
-                -e MAIL_PASSWORD='\${{ secrets.MAIL_PASSWORD }}' \
-                -e SECRET_KEY=\${{ secrets.SECRET_KEY }} \
-                sepe-bot:latest && \
-              sleep 3 && docker logs sepe-bot --tail 5
-            "
+            # Pull latest code (COS has no git, use alpine/git)
+            if [ -d "$REPO_DIR/.git" ]; then
+              echo ">> Pulling latest changes..."
+              docker run --rm -v "$REPO_DIR":/repo alpine/git -C /repo pull origin main
+            else
+              echo ">> Cloning repo..."
+              rm -rf "$REPO_DIR"
+              docker run --rm -v "$REPO_DIR":/repo alpine/git clone "$REPO_URL" /repo
+            fi
+
+            # Build new image
+            echo ">> Building Docker image..."
+            cd "$REPO_DIR"
+            docker build -t "$IMAGE_NAME" .
+
+            # Restart container
+            echo ">> Restarting container..."
+            docker stop "$CONTAINER_NAME" 2>/dev/null || true
+            docker rm "$CONTAINER_NAME" 2>/dev/null || true
+            docker run -d \
+              --name "$CONTAINER_NAME" \
+              -p 10000:10000 \
+              --env-file "$REPO_DIR/.env" \
+              --restart unless-stopped \
+              "$IMAGE_NAME"
+
+            sleep 4
+            if docker ps | grep -q "$CONTAINER_NAME"; then
+              echo ">> Container running OK"
+              docker logs "$CONTAINER_NAME" --tail 3
+            else
+              echo ">> ERROR: Container not running!"
+              docker logs "$CONTAINER_NAME" --tail 20
+              exit 1
+            fi
+            echo "=== DEPLOY OK $(date) ==="
