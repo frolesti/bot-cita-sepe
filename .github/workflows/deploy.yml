@@ -14,7 +14,6 @@ jobs:
           host: 34.175.19.126
           username: ${{ secrets.VM_SSH_USER }}
           key: ${{ secrets.VM_SSH_KEY }}
-          script_stop: true
           command_timeout: 10m
           script: |
             set -e
@@ -34,6 +33,9 @@ jobs:
               rm -rf "$REPO_DIR"
               docker run --rm -v "$REPO_DIR":/repo alpine/git clone "$REPO_URL" /repo
             fi
+
+            # Ensure .env is readable
+            sudo chmod 644 "$REPO_DIR/.env" 2>/dev/null || true
 
             # Build new image
             echo ">> Building Docker image..."
