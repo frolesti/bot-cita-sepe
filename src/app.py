@@ -52,6 +52,16 @@ mail = Mail(app)
 # --- Límit de cerques simultànies per evitar sobrecàrrega ---
 MAX_CONCURRENT_SEARCHES = int(os.getenv('MAX_CONCURRENT_SEARCHES', 10))
 
+# --- Carregar tràmits SEPE ---
+TRAMITS_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'tramits_sepe.json')
+TRAMITS = {}
+try:
+    with open(TRAMITS_FILE, 'r', encoding='utf-8') as f:
+        TRAMITS = json.load(f)
+    logger.info(f"Carregats {len(TRAMITS)} tràmits SEPE")
+except Exception as e:
+    logger.warning(f"No s'han pogut carregar els tràmits SEPE: {e}")
+
 
 @app.route('/')
 def index():
@@ -73,10 +83,12 @@ def index():
     last_freq_type = session.get('last_freq_type', 'once')
     last_interval = session.get('last_interval', 1)
     last_daily_time = session.get('last_daily_time', '09:00')
+    last_tramite_id = session.get('last_tramite_id', '158')
 
     return render_template('index.html',
                            searches=active_searches,
                            communities=communities,
+                           tramits=TRAMITS,
                            last_dni=last_dni,
                            last_email=last_email,
                            last_community=last_community,
@@ -88,7 +100,8 @@ def index():
                            last_appt_types=last_appt_types,
                            last_freq_type=last_freq_type,
                            last_interval=last_interval,
-                           last_daily_time=last_daily_time)
+                           last_daily_time=last_daily_time,
+                           last_tramite_id=last_tramite_id)
 
 # API endpoints per als desplegables dinàmics
 @app.route('/api/provinces')
@@ -132,6 +145,7 @@ def start_search():
         appt_types = ['person']
     community = request.form.getlist('community')
     scope = request.form.get('scope')
+    tramite_id = request.form.get('tramite_id', '158')
 
     # Guardar preferències d'UI a la sessió del navegador
     session['last_dni'] = dni
@@ -146,6 +160,7 @@ def start_search():
     session['last_freq_type'] = request.form.get('freq_type')
     session['last_interval'] = request.form.get('interval_hours')
     session['last_daily_time'] = request.form.get('daily_time')
+    session['last_tramite_id'] = tramite_id
 
     # Cerques actives des de state.json (compartit amb el worker)
     active_searches = load_state()
@@ -228,7 +243,8 @@ def start_search():
             'daily_time': daily_time,
             'last_cycle_time': 0,
             'status_message': "Iniciant...",
-            'last_result_message': "Pendent de primera execució"
+            'last_result_message': "Pendent de primera execució",
+            'tramite_id': tramite_id
         }
         # Guardar a state.json perquè el worker ho vegi
         save_state(active_searches)
@@ -360,6 +376,49 @@ def server_info():
         'active_searches': total_active,
         'total_searches': total_searches,
     })
+
+
+@app.route('/api/test-email', methods=['POST'])
+def test_email():
+    """Envia un correu de prova per verificar que la configuració funciona."""
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+
+    to_email = request.json.get('email') if request.is_json else request.form.get('email')
+    if not to_email:
+        return jsonify({'status': 'error', 'message': 'Cal un email destinatari'}), 400
+
+    sender_email = os.getenv('MAIL_USERNAME')
+    sender_password = os.getenv('MAIL_PASSWORD')
+
+    if not sender_email or not sender_password:
+        return jsonify({'status': 'error', 'message': 'Credencials de correu no configurades al servidor (.env)'}), 500
+
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = sender_email
+        msg['To'] = to_email
+        msg['Subject'] = '[BOT CITA SEPE] Correu de prova'
+        body = """Hola!
+
+Aquest és un correu de prova enviat des del Bot Cita SEPE.
+Si reps aquest missatge, la configuració d'enviament de correus és correcta.
+
+Quan el bot trobi una cita disponible, rebràs una notificació similar a aquesta.
+
+— Bot Cita SEPE"""
+        msg.attach(MIMEText(body, 'plain'))
+
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+            server.login(sender_email, sender_password)
+            server.send_message(msg)
+
+        logger.info(f"Correu de prova enviat correctament a {to_email}")
+        return jsonify({'status': 'ok', 'message': f'Correu enviat a {to_email}'})
+    except Exception as e:
+        logger.error(f"Error enviant correu de prova: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
 if __name__ == '__main__':

@@ -1,4 +1,4 @@
-import time
+﻿import time
 import os
 import logging
 import sys
@@ -72,14 +72,19 @@ def check_single_zip(dni, data, zip_code):
         
         bot.close()
         
+        # Extreure info d'oficines (si n'hi ha)
+        offices_info = results.get('offices', [])
+        
         # Mirar si algun tipus ha trobat cita
         for appt_type, found in results.items():
+            if appt_type == 'offices':
+                continue  # Skip metadata key
             if found:
                 type_name = 'Presencial' if appt_type == 'person' else 'Telefònica'
                 logger.info(f"!!! CITA {type_name} TROBADA per {dni} a {zip_code} !!!")
-                return True, zip_code, appt_type
+                return True, zip_code, appt_type, offices_info
         
-        return False, None, None
+        return False, None, None, []
             
     except Exception as e:
         logger.error(f"Error comprovant per {dni} a {zip_code}: {e}")
@@ -93,11 +98,16 @@ def run_worker():
     logger.info("Iniciant Worker del Bot SEPE...")
     
     try:
-        MAX_WORKERS = int(os.getenv('MAX_WORKERS', 2)) # Més conservador en worker
+        MAX_WORKERS = int(os.getenv('MAX_WORKERS', 3)) # Fils simultanis per verificar CPs en paral·lel
     except ValueError:
-        MAX_WORKERS = 2
+        MAX_WORKERS = 3
+    
+    try:
+        BATCH_SIZE = int(os.getenv('BATCH_SIZE', 3)) # CPs a comprovar per DNI per iteració
+    except ValueError:
+        BATCH_SIZE = 3
         
-    logger.info(f"Worker configurat amb {MAX_WORKERS} fils simultanis.")
+    logger.info(f"Worker configurat amb {MAX_WORKERS} fils simultanis i BATCH_SIZE={BATCH_SIZE}.")
 
     while True:
         try:
@@ -176,20 +186,22 @@ def run_worker():
                     if data.get('current_zip_index', 0) == 0 and not data.get('cycle_start_time'):
                         data['cycle_start_time'] = time.time()
 
-                    # Agafem el següent ZIP a comprovar
+                    # Agafem un BATCH de ZIPs a comprovar en paral·lel
                     zips = data['zips']
                     idx = data.get('current_zip_index', 0)
                     
                     if idx < len(zips):
-                        zip_to_check = zips[idx]
+                        batch_end = min(idx + BATCH_SIZE, len(zips))
+                        batch_zips = zips[idx:batch_end]
                         
                         # Actualitzem estat abans de llançar (perquè UI vegi que treballa)
-                        data['status_message'] = f"Cercant a {zip_to_check}..."
+                        data['status_message'] = f"Cercant a {batch_zips[0]}... ({len(batch_zips)} CPs en paral·lel)"
                         active_searches[dni] = data # Important actualitzar l'objecte pare
                         updates_made = True 
                         
-                        future = executor.submit(check_single_zip, dni, data, zip_to_check)
-                        futures[future] = (dni, zip_to_check)
+                        for zip_to_check in batch_zips:
+                            future = executor.submit(check_single_zip, dni, data, zip_to_check)
+                            futures[future] = (dni, zip_to_check)
                 
                 # Si hem fet actualitzacions d'estat (missatges "En pausa"), guardem abans de bloquejar en futures
                 if updates_made:
@@ -199,7 +211,7 @@ def run_worker():
                 # Processar resultats dels fils
                 for future in futures:
                     dni, checked_zip = futures[future]
-                    found, success_zip, found_type = future.result()
+                    found, success_zip, found_type, offices_info = future.result()
                     
                     # Recarreguem estat per si ha canviat mentrestant
                     data = active_searches.get(dni)
@@ -218,17 +230,29 @@ def run_worker():
                         appt_types = data.get('appt_types', [data.get('type', 'person')])
                         types_str = ' i '.join(['Presencial' if t == 'person' else 'Telefònica' for t in appt_types])
                         
-                        # Enviar Email
-                        email_body = f"""El bot ha trobat una cita!
+                        # Construir info d'oficines per al correu
+                        offices_text = ''
+                        if offices_info:
+                            offices_lines = []
+                            for i, office in enumerate(offices_info, 1):
+                                offices_lines.append(f'  {i}. {office}')
+                            offices_text = chr(10)*2 + 'OFICINES DISPONIBLES:' + chr(10) + '-'*40 + chr(10) + chr(10).join(offices_lines) + chr(10) + '-'*40
                         
-DNI: {dni}
-Codi Postal: {success_zip}
-Tipus trobat: {type_name}
-Tipus cercats: {types_str}
-Zona: {data.get('scope_name')}
-
-Vés RÀPIDAMENT a la web del SEPE."""
-                        send_email(data.get('email'), "¡CITA SEPE TROBADA!", email_body)
+                        # Enviar Email amb info d'oficines
+                        email_body = (
+                            f"EL BOT HA TROBAT UNA CITA!\n\n"
+                            f"DNI: {dni}\n"
+                            f"Codi Postal: {success_zip}\n"
+                            f"Tipus trobat: {type_name}\n"
+                            f"Tipus cercats: {types_str}\n"
+                            f"Zona: {data.get('scope_name')}\n"
+                            f"Data: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n"
+                            f"{offices_text}\n\n"
+                            f"VES RAPIDAMENT a la web del SEPE per reservar la cita!\n"
+                            f"https://sede.sepe.gob.es/portalSede/procedimientos-y-servicios/personas/proteccion-por-desempleo/cita-previa/cita-previa-solicitud.html\n\n"
+                            f"-- Bot Cita SEPE"
+                        )
+                        send_email(data.get('email'), "CITA SEPE TROBADA!", email_body)
                         updates_made = True
                         
                     else:

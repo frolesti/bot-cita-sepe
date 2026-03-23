@@ -4,50 +4,351 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bot Cita SEPE</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body { min-height: 100vh; display: flex; flex-direction: column; }
-        .container { flex: 1; }
+        /* ═══════════════════════════════════════════════
+           CLEAN MODERN THEME - Bot Cita SEPE
+           ═══════════════════════════════════════════════ */
+        :root {
+            --primary: #2563eb;
+            --primary-light: #3b82f6;
+            --primary-dark: #1d4ed8;
+            --primary-bg: #eff6ff;
+            --success: #16a34a;
+            --success-light: #dcfce7;
+            --warning: #f59e0b;
+            --warning-light: #fef3c7;
+            --danger: #dc2626;
+            --danger-light: #fee2e2;
+            --gray-50: #f9fafb;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-300: #d1d5db;
+            --gray-500: #6b7280;
+            --gray-700: #374151;
+            --gray-900: #111827;
+            --radius: 12px;
+            --shadow: 0 1px 3px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
+            --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
+            --shadow-lg: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05);
+        }
+
+        * { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important; }
+
+        body {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background: var(--gray-50) !important;
+            color: var(--gray-900);
+        }
+        .container { flex: 1; max-width: 900px; }
         footer { margin-top: auto; }
-        
+
+        /* === HEADER === */
+        .app-header {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+            padding: 1.5rem 0;
+            margin-bottom: 1.5rem;
+            box-shadow: var(--shadow-md);
+        }
+        .app-header .logo-icon {
+            font-size: 2.2rem;
+            margin-right: 0.5rem;
+        }
+        .app-header h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin: 0;
+            letter-spacing: -0.02em;
+        }
+        .app-header .subtitle {
+            font-size: 0.85rem;
+            opacity: 0.85;
+            font-weight: 400;
+        }
+
+        /* === CARDS === */
+        .card {
+            background: white !important;
+            border: 1px solid var(--gray-200) !important;
+            border-radius: var(--radius) !important;
+            box-shadow: var(--shadow) !important;
+        }
+        .card:hover {
+            box-shadow: var(--shadow-md) !important;
+        }
+
+        /* === SECTION HEADERS === */
+        h3 {
+            font-size: 1.2rem !important;
+            font-weight: 600 !important;
+            color: var(--gray-900) !important;
+        }
+        h5 {
+            font-size: 0.95rem !important;
+            font-weight: 600 !important;
+            color: var(--primary-dark) !important;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        h5 .step-num {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: var(--primary);
+            color: white;
+            font-size: 0.75rem;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+
+        /* === FORMS === */
+        .form-control, .form-select {
+            border-radius: 8px !important;
+            border: 1px solid var(--gray-300) !important;
+            padding: 0.55rem 0.75rem;
+            font-size: 0.9rem !important;
+            transition: border-color 0.15s, box-shadow 0.15s;
+        }
+        .form-control:focus, .form-select:focus {
+            border-color: var(--primary-light) !important;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
+        }
+        .form-label {
+            font-weight: 500;
+            font-size: 0.85rem;
+            color: var(--gray-700);
+            margin-bottom: 0.3rem;
+        }
+        .form-text { font-size: 0.8rem; }
+        .form-check-input:checked {
+            background-color: var(--primary) !important;
+            border-color: var(--primary) !important;
+        }
+        .form-check-input:focus {
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15) !important;
+        }
+        .input-group-text {
+            border-radius: 8px !important;
+            font-size: 0.85rem;
+        }
+
+        /* === BUTTONS === */
+        .btn {
+            border-radius: 8px !important;
+            font-weight: 500;
+            font-size: 0.9rem !important;
+            padding: 0.5rem 1rem;
+            transition: all 0.15s ease;
+        }
+        .btn-primary {
+            background: var(--primary) !important;
+            border-color: var(--primary) !important;
+        }
+        .btn-primary:hover {
+            background: var(--primary-dark) !important;
+            border-color: var(--primary-dark) !important;
+            box-shadow: var(--shadow-md) !important;
+        }
+        .btn-warning {
+            background: var(--warning) !important;
+            border-color: var(--warning) !important;
+            color: white !important;
+        }
+        .btn-success {
+            background: var(--success) !important;
+            border-color: var(--success) !important;
+        }
+        .btn-danger {
+            background: transparent !important;
+            border: 1px solid var(--danger) !important;
+            color: var(--danger) !important;
+        }
+        .btn-danger:hover {
+            background: var(--danger) !important;
+            color: white !important;
+        }
+        .btn-outline-primary {
+            color: var(--primary) !important;
+            border-color: var(--gray-300) !important;
+        }
+        .btn-check:checked + .btn-outline-primary {
+            background: var(--primary) !important;
+            color: white !important;
+            border-color: var(--primary) !important;
+        }
+
+        /* === TABLE === */
+        .table { font-size: 0.88rem; }
+        .table th {
+            font-weight: 600;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            color: var(--gray-500);
+            border-bottom: 2px solid var(--gray-200);
+            padding: 0.6rem 0.75rem;
+        }
+        .table td {
+            vertical-align: middle;
+            padding: 0.6rem 0.75rem;
+            border-color: var(--gray-100);
+        }
+        .table tbody tr:hover {
+            background: var(--gray-50);
+        }
+
+        /* === PROGRESS === */
+        .progress {
+            border-radius: 100px !important;
+            height: 8px !important;
+            background: var(--gray-100) !important;
+        }
+        .progress-bar {
+            border-radius: 100px !important;
+            transition: width 0.5s ease;
+        }
+
+        /* === BADGES === */
+        .badge {
+            font-weight: 500 !important;
+            font-size: 0.78rem !important;
+            padding: 0.35em 0.65em !important;
+            border-radius: 6px !important;
+        }
+        .badge.bg-success {
+            background: var(--success-light) !important;
+            color: var(--success) !important;
+        }
+        .badge.bg-warning {
+            background: var(--warning-light) !important;
+            color: #92400e !important;
+        }
+        .badge.bg-secondary {
+            background: var(--gray-100) !important;
+            color: var(--gray-500) !important;
+        }
+        .badge.bg-light {
+            background: var(--primary-bg) !important;
+            color: var(--primary) !important;
+            border: none !important;
+        }
+
+        /* === ALERTS === */
+        .alert {
+            border-radius: var(--radius) !important;
+            font-size: 0.88rem;
+        }
+        .alert-success {
+            background: var(--success-light) !important;
+            border: 1px solid #bbf7d0 !important;
+            border-left: 4px solid var(--success) !important;
+            color: #166534 !important;
+        }
+        .alert-info {
+            background: var(--primary-bg) !important;
+            border: 1px solid #bfdbfe !important;
+            color: #1e40af !important;
+        }
+        .alert-danger {
+            background: var(--danger-light) !important;
+            border: 1px solid #fecaca !important;
+            color: #991b1b !important;
+        }
+
+        /* === SELECT2 === */
+        .select2-container--default .select2-selection--single {
+            border-radius: 8px !important;
+            border: 1px solid var(--gray-300) !important;
+            height: 38px;
+            padding: 4px 8px;
+        }
+        .select2-container--default .select2-selection--single .select2-selection__arrow { height: 36px; }
+        .select2-container--default .select2-selection--multiple {
+            border-radius: 8px !important;
+            border: 1px solid var(--gray-300) !important;
+            min-height: 38px;
+        }
+        .select2-container--default .select2-selection--multiple .select2-selection__choice {
+            background: var(--primary-bg) !important;
+            color: var(--primary) !important;
+            border: 1px solid #bfdbfe !important;
+            border-radius: 6px !important;
+            font-size: 0.85rem;
+        }
+        .select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
+            color: var(--primary) !important;
+        }
+        .select2-dropdown {
+            border-radius: 8px !important;
+            border: 1px solid var(--gray-200) !important;
+            box-shadow: var(--shadow-lg) !important;
+            overflow: hidden;
+        }
+        .select2-container--default .select2-results__option--highlighted[aria-selected] {
+            background: var(--primary) !important;
+        }
+        .select2-search__field { border-radius: 4px !important; }
+
+        /* === MISC === */
         .scope-section { display: none; }
-        .select2-container .select2-selection--single {
-            height: 38px; /* Match Bootstrap input height */
-            padding: 5px;
+        .spinner-border-sm { width: 1rem; height: 1rem; border-width: 0.2em; }
+        .info-box {
+            background: var(--primary-bg);
+            border: 1px solid #bfdbfe;
+            border-radius: var(--radius);
+            padding: 1rem 1.2rem;
+            font-size: 0.85rem;
+            color: #1e40af;
         }
-        .select2-container--default .select2-selection--single .select2-selection__arrow {
-            height: 36px;
-        }
-        /* Spinner animation */
-        .spinner-border-sm {
-            width: 1rem;
-            height: 1rem;
-            border-width: 0.2em;
+        .test-email-result { font-size: 0.82rem; margin-top: 4px; }
+        @media (max-width: 768px) {
+            .container { padding: 0 0.75rem; }
+            .btn { font-size: 0.82rem !important; }
         }
     </style>
 </head>
-<body class="bg-light">
-    <div class="container my-3">
-        <h1 class="text-center mb-4">Automatització Cita SEPE</h1>
+<body>
+    <div class="app-header">
+        <div class="container">
+            <div class="d-flex align-items-center justify-content-center">
+                <span class="logo-icon">🤖</span>
+                <div>
+                    <h1>Bot Cita SEPE</h1>
+                    <div class="subtitle">Monitorització automàtica de cites prèvies</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="container mb-4">
         
-        <div class="card p-3 mb-4">
-            <h3 class="text-center">Nova Cerca</h3>
+        <div class="card p-3 p-md-4 mb-4">
+            <h3 class="text-center mb-3">Nova Cerca</h3>
 
 
 
-            <p class="mb-4 text-muted">
-                Fes servir aquesta eina per trobar una cita prèvia al SEPE. Configura els paràmetres i el bot anirà comprovant la disponibilitat periòdicament segons la recurrència, per als codis postals i pel DNI que indiquis.
-                <br>
-                <strong>Important:</strong> En el moment que es trobi una cita lliure, rebràs un <strong>correu electrònic d'avís immediatament</strong> per a que puguis reservar-la de seguida. Tingues en compte que aquest bot només comprova la disponibilitat i no realitza la reserva automàtica, ja que no està permesa aquesta interacció fora de la pàgina oficial del SEPE. Per això és crucial que el correu que indiquis sigui un al qual tinguis accés ràpid i que revisis sovint després d'iniciar la cerca.
-            </p>
+            <div class="info-box mb-4">
+                <i class="bi bi-info-circle me-1"></i>
+                Configura els paràmetres i el bot comprovarà la disponibilitat periòdicament.
+                Quan trobi una cita lliure, rebràs un <strong>correu electrònic d'avís immediat</strong>.
+                <br><small class="text-muted mt-1 d-block">El bot només comprova disponibilitat — no fa reserves automàtiques.</small>
+            </div>
             
             <form action="/start" method="POST">
                 <fieldset>
                 
                 <!-- 1. Informació Personal -->
-                <h5 class="mb-1">1. Informació Personal</h5>
+                <h5 class="mb-1"><span class="step-num">1</span> Informació Personal</h5>
                 <p class="text-muted small mb-3" style="font-size: 0.8rem;">
                     <i class="bi bi-shield-lock"></i> Cap dada es guarda al servidor, només s'utilitza per a la sessió actual per garantir la teva privacitat.
                 </p>
@@ -58,13 +359,19 @@
                     </div>
                     <div class="col-md-6 mb-3">
                         <label for="email" class="form-label">Email per notificar</label>
-                        <input type="email" class="form-control" id="email" name="email" required placeholder="el_teu@email.com" value="{{ last_email }}">
+                        <div class="input-group">
+                            <input type="email" class="form-control" id="email" name="email" required placeholder="el_teu@email.com" value="{{ last_email }}">
+                            <button type="button" class="btn btn-outline-primary btn-sm" onclick="testEmail()" title="Enviar correu de prova" style="letter-spacing:0; font-size:0.9rem !important;">
+                                <i class="bi bi-envelope-check"></i> Test
+                            </button>
+                        </div>
                         <div class="form-text text-primary"><i class="bi bi-envelope-exclamation"></i> T'enviarem un mail aquí quan trobem cita.</div>
+                        <div id="testEmailResult" style="display:none; font-size:0.85rem; margin-top:4px;"></div>
                     </div>
                 </div>
 
                 <!-- 2. Comunitat Autònoma -->
-                <h5 class="mb-3">2. Selecciona Comunitat Autònoma</h5>
+                <h5 class="mb-3"><span class="step-num">2</span> Selecciona Comunitat Autònoma</h5>
                 <div class="mb-4">
                     <select class="form-select" id="community" name="community" required onchange="onCommunityChange()" style="width: 100%;">
                         <option value="">Tria una opció...</option>
@@ -74,8 +381,21 @@
                     </select>
                 </div>
 
-                <!-- 3. Àmbit de Cerca -->
-                <h5 class="mb-3">3. Àmbit de Cerca</h5>
+                <!-- 3. Tràmit SEPE -->
+                <h5 class="mb-3"><span class="step-num">3</span> Tipus de Tràmit</h5>
+                <div class="mb-4">
+                    <select class="form-select" id="tramite_id" name="tramite_id" style="width: 100%;">
+                        {% for name, info in tramits.items() %}
+                        <option value="{{ info.value }}" {% if info.value == last_tramite_id %}selected{% endif %}>{{ name }}</option>
+                        {% endfor %}
+                    </select>
+                    <div class="form-text text-muted mt-1">
+                        <i class="bi bi-info-circle"></i> Selecciona el motiu pel qual vols demanar cita al SEPE.
+                    </div>
+                </div>
+
+                <!-- 4. Àmbit de Cerca -->
+                <h5 class="mb-3"><span class="step-num">4</span> Àmbit de Cerca</h5>
                 <div id="scope_container">
                     <fieldset id="scope_fieldset" disabled>
                     <div id="scope_disabled_msg" class="text-muted mb-3" style="font-size: 0.85rem;">
@@ -132,8 +452,8 @@
                     </fieldset>
                 </div>
 
-                <!-- 4. Tipus de Cita -->
-                <h5 class="mb-3">4. Tipus de Cita</h5>
+                <!-- 5. Tipus de Cita -->
+                <h5 class="mb-3"><span class="step-num">5</span> Tipus de Cita</h5>
                 <div class="mb-4">
                     <div class="form-check form-check-inline">
                         <input class="form-check-input" type="checkbox" name="appt_type" id="appt_person" value="person"
@@ -150,8 +470,8 @@
                     </div>
                 </div>
 
-                <!-- 5. Recurrència -->
-                <h5 class="mb-3">5. Recurrència de la cerca</h5>
+                <!-- 6. Recurrència -->
+                <h5 class="mb-3"><span class="step-num">6</span> Recurrència de la cerca</h5>
                 <div class="mb-4">
                     <div class="form-check mb-2">
                         <input class="form-check-input" type="radio" name="freq_type" id="freq_once" value="once" {% if last_freq_type == 'once' %}checked{% endif %} onclick="toggleFreqOptions()">
@@ -201,7 +521,7 @@
         </div>
 
         <div class="card p-3 mb-4" id="active_searches_section">
-            <h3>Cerques Actives</h3>
+            <h3>Cerques Actives<span class="cursor"></span></h3>
             {% with messages = get_flashed_messages() %}
                 {% if messages %}
                     {% for message in messages %}
@@ -267,8 +587,7 @@
                                             {{ total }} CPs
                                         {% endif %}
                                     </span>
-                                    <span class="progress-pct fw-bold">{{ pct }}%</span>
-                                    <span class="progress-eta text-muted" style="font-size:0.7rem;"></span>
+                                    <span class="progress-eta fw-bold text-primary" style="font-size:0.78rem;"></span>
                                 </div>
                                 <div class="progress" style="height: 8px;">
                                     <div class="progress-bar progress-bar-striped {% if data.active %}progress-bar-animated bg-success{% elif 'ÈXIT' in (data.status_message or '').upper() %}bg-success{% elif 'Sense èxit' in (data.status_message or '') %}bg-warning{% else %}bg-secondary{% endif %}"
@@ -324,10 +643,11 @@
         </div>
     </div>
 
-    <footer class="text-center text-muted mt-5 mb-4">
+    <footer class="text-center mt-5 mb-4">
         <small>
-            &copy;frolesti - 2026
-            <a href="https://frolesti.aixeta.cat/ca" target="_blank" class="text-decoration-none">Suporta'm a aixeta.cat</a>
+            <span style="color: var(--green-dim);">&gt;</span> &copy;frolesti - 2026 |
+            <a href="https://frolesti.aixeta.cat/ca" target="_blank">Suporta'm a aixeta.cat</a>
+            <span class="cursor"></span>
         </small>
     </footer>
 
@@ -734,6 +1054,40 @@
         }
 
         // --- Stop / Delete actions ---
+        function testEmail() {
+            var email = document.getElementById('email').value.trim();
+            var resultDiv = document.getElementById('testEmailResult');
+            if (!email) {
+                resultDiv.style.display = 'block';
+                resultDiv.style.color = 'var(--amber)';
+                resultDiv.textContent = '> Introdueix un email primer.';
+                return;
+            }
+            resultDiv.style.display = 'block';
+            resultDiv.style.color = 'var(--green-dim)';
+            resultDiv.textContent = '> Enviant correu de prova...';
+            
+            fetch('/api/test-email', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({email: email})
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.status === 'ok') {
+                    resultDiv.style.color = 'var(--green)';
+                    resultDiv.textContent = '> OK: ' + data.message;
+                } else {
+                    resultDiv.style.color = 'var(--red)';
+                    resultDiv.textContent = '> ERROR: ' + data.message;
+                }
+            })
+            .catch(err => {
+                resultDiv.style.color = 'var(--red)';
+                resultDiv.textContent = '> ERROR: ' + err;
+            });
+        }
+
         function stopSearch(dni) {
             fetch('/api/stop/' + dni, { method: 'POST' })
                 .then(r => r.json())
@@ -772,7 +1126,7 @@
                         // Reset progress
                         var $container = $row.find('.progress-container');
                         $container.find('.progress-bar').css('width', '0%').addClass('progress-bar-animated bg-success');
-                        $container.find('.progress-pct').text('0%');
+                        $container.find('.progress-eta').text('');
                         $container.find('.progress-label').html('CP <span class="progress-idx">0</span> / <span class="progress-total">'+($container.find('.progress-total').text() || '?')+'</span>');
                         // Restart polling if stopped
                         if (!statusInterval) {
@@ -857,7 +1211,6 @@
                         if ($container.length) {
                             var $bar = $container.find('.progress-bar');
                             $bar.css('width', pct + '%').attr('aria-valuenow', pct);
-                            $container.find('.progress-pct').text(pct + '%');
 
                             if (status.active) {
                                 $container.find('.progress-label').html(
@@ -869,13 +1222,12 @@
                                 $bar.removeClass('progress-bar-animated');
                                 if (status.status_message && status.status_message.toUpperCase().includes('ÈXIT')) {
                                     $bar.removeClass('bg-warning bg-secondary').addClass('bg-success');
-                                    pct = 100;
                                     $bar.css('width', '100%');
-                                    $container.find('.progress-pct').text('100%');
+                                    $container.find('.progress-eta').text('Completat!');
                                 } else if (status.status_message && (status.status_message.includes('Sense èxit') || status.status_message.includes('Finalitzat'))) {
                                     $bar.removeClass('bg-success bg-secondary').addClass('bg-warning');
                                     $bar.css('width', '100%');
-                                    $container.find('.progress-pct').text('100%');
+                                    $container.find('.progress-eta').text('Finalitzat');
                                 } else {
                                     $bar.removeClass('bg-success bg-warning').addClass('bg-secondary');
                                 }

@@ -9,6 +9,8 @@ from selenium.webdriver.support.ui import Select
 import time
 import logging
 import os
+import re
+import threading
 
 # Configurem el logging
 # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -16,6 +18,7 @@ import os
 
 # Cache the driver path globally to avoid race conditions in threads
 DRIVER_PATH = None
+_driver_lock = threading.Lock()
 
 class SepeBot:
     def __init__(self, headless=True):
@@ -41,12 +44,14 @@ class SepeBot:
             self.service = Service(system_chromedriver)
         else:
             # Fallback to ChromeDriverManager (Local Windows/Standard)
-            if DRIVER_PATH is None:
-                try:
-                    DRIVER_PATH = ChromeDriverManager().install()
-                except Exception as e:
-                    logging.error(f"Error installing ChromeDriver: {e}")
-                    raise e
+            with _driver_lock:
+                if DRIVER_PATH is None:
+                    try:
+                        logging.info("Descarregant ChromeDriver (nomes un cop)...")
+                        DRIVER_PATH = ChromeDriverManager().install()
+                    except Exception as e:
+                        logging.error(f"Error installing ChromeDriver: {e}")
+                        raise e
             self.service = Service(DRIVER_PATH)
 
         self.driver = webdriver.Chrome(service=self.service, options=options)
@@ -288,11 +293,18 @@ class SepeBot:
                     if found:
                         type_name = 'Presencial' if appt_type == 'person' else 'Telefònica'
                         logging.info(f"CITA {type_name} TROBADA per {dni} a {zip_code}!")
+                        offices = self._extract_offices()
+                        if offices:
+                            results['offices'] = offices
             else:
                 # No hi ha selector de canal — el resultat val per tots els tipus
                 found = self._check_page_result(zip_code, dni)
                 for t in appt_types:
                     results[t] = found
+                if found:
+                    offices = self._extract_offices()
+                    if offices:
+                        results['offices'] = offices
             
             return results
 
@@ -316,8 +328,9 @@ class SepeBot:
                 except:
                     continue
             
-            # Fallback: si la pàgina conté "seleccione el canal", agafar el primer select visible
-            if "seleccione el canal" in self.driver.page_source.lower():
+            # Fallback: si la pàgina conté "seleccione/seleccioneu el canal", agafar el primer select visible
+            page_lower = self.driver.page_source.lower()
+            if "seleccione el canal" in page_lower or "seleccioneu el canal" in page_lower:
                 for s in channel_selects:
                     try:
                         if s.is_displayed():
@@ -360,15 +373,21 @@ class SepeBot:
         time.sleep(2)
         page_source = self.driver.page_source.lower()
         
-        # Frases que indiquen NO disponibilitat
+        # Frases que indiquen NO disponibilitat (castellà i català)
         negative_phrases = [
             "no hay citas",
+            "no hi ha cites",
             "no existe disponibilidad",
+            "no existeix disponibilitat",
             "no podemos ofrecerle cita",
+            "no podem oferir-li cita",
             "no podemos ofrecerle citas",
             "el horario de atenci\u00f3n",
+            "l'horari d'atenci\u00f3",
             "int\u00e9ntelo de nuevo",
-            "no se han encontrado citas"
+            "torneu-ho a intentar",
+            "no se han encontrado citas",
+            "no s'han trobat cites"
         ]
         
         for phrase in negative_phrases:
@@ -376,15 +395,32 @@ class SepeBot:
                 logging.debug(f"Resultat NEGATIU detectat per frase: '{phrase}'")
                 return False
         
-        # Indicadors positius forts
+        # Indicadors positius forts (castellà i català)
         positive_indicators = [
+            # Llistat d'oficines (pas 2 del SEPE)
+            "primer hueco disponible",
+            "primer buit disponible",
+            "oficinas disponibles",
+            "oficines disponibles",
+            "seleccione el canal",
+            "seleccioneu el canal",
+            # Selecció d'oficina
             "seleccione la oficina",
-            "seleccione el d\u00eda",
+            "seleccioneu l'oficina",
             "seleccione una oficina",
+            "seleccioneu una oficina",
             "listado de oficinas",
+            "llistat d'oficines",
+            # Selecció de dia/hora
+            "seleccione el d\u00eda",
+            "seleccioneu el dia",
             "citas disponibles",
+            "cites disponibles",
+            # Confirmació
             "su cita ha sido reservada",
-            "datos de la cita"
+            "la seva cita ha estat reservada",
+            "datos de la cita",
+            "dades de la cita",
         ]
         
         for indicator in positive_indicators:
@@ -394,15 +430,79 @@ class SepeBot:
                 return True
         
         # Comprovar elements HTML de resultat positiu
-        if len(self.driver.find_elements(By.NAME, "idOficina")) > 0 or \
-           len(self.driver.find_elements(By.CLASS_NAME, "tablaOferta")) > 0:
-            logging.info("Resultat POSITIU detectat per elements HTML.")
-            self._save_debug_snapshot("success_elements")
-            return True
+        positive_elements = [
+            (By.NAME, "idOficina"),
+            (By.CLASS_NAME, "tablaOferta"),
+            # Checkboxes d'oficines al llistat del SEPE
+            (By.CSS_SELECTOR, "input[type='checkbox'][name*='oficina']"),
+            (By.CSS_SELECTOR, "input[type='checkbox'][name*='Oficina']"),
+            (By.CSS_SELECTOR, ".oficina-card"),
+            (By.CSS_SELECTOR, "[class*='disponible']"),
+            # Mapa d'oficines
+            (By.CSS_SELECTOR, ".leaflet-container"),
+            (By.CSS_SELECTOR, "[class*='mapa']"),
+        ]
+        
+        for by, selector in positive_elements:
+            try:
+                elems = self.driver.find_elements(by, selector)
+                visible = [e for e in elems if e.is_displayed()]
+                if visible:
+                    logging.info(f"Resultat POSITIU detectat per element HTML: {selector} ({len(visible)} trobats)")
+                    self._save_debug_snapshot("success_elements")
+                    return True
+            except:
+                continue
 
         logging.warning("Resultat incert. No s'ha trobat ni error ni confirmació clara.")
         self._save_debug_snapshot("uncertain")
         return False
+
+    def _extract_offices(self):
+        """Extreu informacio de les oficines disponibles de la pagina de resultats."""
+        offices = []
+        try:
+            page_source = self.driver.page_source
+            
+            # Patro 1: "Primer hueco/buit disponible: <data>"
+            pattern_hueco = re.compile(
+                r'(?:primer\s+(?:hueco|buit)\s+disponible[:\s]*)(.+?\d{1,2}:\d{2})',
+                re.IGNORECASE
+            )
+            matches = pattern_hueco.findall(page_source)
+            for m in matches:
+                offices.append(m.strip())
+            
+            # Patro 2: Oficines amb nom
+            try:
+                office_elements = self.driver.find_elements(By.CSS_SELECTOR, 
+                    ".oficina-card, .tablaOferta tr, [class*='oficina'], label[for*='oficina']")
+                for el in office_elements:
+                    text = el.text.strip()
+                    if text and len(text) > 5 and text not in offices:
+                        offices.append(text[:200])
+            except:
+                pass
+            
+            # Patro 3: Si no hem trobat res, agafar text visible rellevant
+            if not offices:
+                try:
+                    body_text = self.driver.find_element(By.TAG_NAME, "body").text
+                    for line in body_text.split('\n'):
+                        line = line.strip()
+                        if line and ('disponible' in line.lower() or 'oficina' in line.lower() or re.search(r'\d{1,2}:\d{2}', line)):
+                            if len(line) > 5 and line not in offices:
+                                offices.append(line[:200])
+                except:
+                    pass
+            
+            if offices:
+                logging.info(f"Oficines extretes: {len(offices)} entrades")
+            
+        except Exception as e:
+            logging.debug(f"Error extraient oficines: {e}")
+        
+        return offices[:20]
 
     def _save_debug_snapshot(self, prefix):
         """Guarda HTML i captura de pantalla per depuració."""

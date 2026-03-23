@@ -1,0 +1,30 @@
+{
+    "He finalizado un trabajo: acceso o reanudación de prestación o subsidio": {
+        "value": "158",
+        "subtramites": []
+    },
+    "Otros accesos a subsidio por desempleo": {
+        "value": "159",
+        "subtramites": []
+    },
+    "Declaración anual de Rentas (DAR) y/o prórroga de subsidio": {
+        "value": "160",
+        "subtramites": []
+    },
+    "Cobros indebidos, sanciones, variaciones económicas o familiares y otras incidencias": {
+        "value": "161",
+        "subtramites": []
+    },
+    "Estoy cobrando prestación/subsidio y ha cambiado mi situación": {
+        "value": "162",
+        "subtramites": []
+    },
+    "Tránsito a Ingreso Mínimo Vital (IMV)": {
+        "value": "163",
+        "subtramites": []
+    },
+    "Información general, entrega de documentación, modificación datos bancarios": {
+        "value": "164",
+        "subtramites": []
+    }
+}
