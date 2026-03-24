@@ -472,7 +472,8 @@ class SepeBot:
         except:
             visible_text = ""
         
-        logging.debug(f"Visible text ({len(visible_text)} chars): {visible_text[:300]}...")
+        logging.info(f"[DETECT] Visible text length: {len(visible_text)} chars")
+        logging.info(f"[DETECT] First 500 chars: {visible_text[:500]}")
         
         # === POSITIVE indicators FIRST (castellà i català) ===
         positive_indicators = [

@@ -378,6 +378,35 @@ def server_info():
     })
 
 
+@app.route('/api/logs')
+def get_logs():
+    """Retorna les últimes línies del log del worker per diagnòstic remot."""
+    lines = int(request.args.get('lines', 150))
+    log_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'worker.log')
+    if not os.path.exists(log_path):
+        return jsonify({'logs': '(no log file yet)'}), 200
+    try:
+        with open(log_path, 'r', encoding='utf-8', errors='replace') as f:
+            all_lines = f.readlines()
+        tail = all_lines[-lines:]
+        return jsonify({'logs': ''.join(tail)}), 200
+    except Exception as e:
+        return jsonify({'logs': f'Error reading log: {e}'}), 500
+
+
+@app.route('/api/debug-snapshots')
+def list_debug_snapshots():
+    """Llista els HTML/screenshots de debug guardats pel bot."""
+    import glob
+    base = os.path.join(os.path.dirname(__file__), '..')
+    htmls = sorted(glob.glob(os.path.join(base, 'debug_*.html')), key=os.path.getmtime, reverse=True)[:10]
+    pngs = sorted(glob.glob(os.path.join(base, 'debug_screenshots', '*.png')), key=os.path.getmtime, reverse=True)[:10]
+    return jsonify({
+        'html_files': [os.path.basename(f) for f in htmls],
+        'png_files': [os.path.basename(f) for f in pngs],
+    })
+
+
 @app.route('/api/test-email', methods=['POST'])
 def test_email():
     """Envia un correu de prova per verificar que la configuració funciona."""

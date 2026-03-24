@@ -15,11 +15,19 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from src.sepe_bot import SepeBot
 from src.common import load_state, save_state
 
-# Configurar logging
+# Configurar logging — stdout + fitxer rotatiu perquè /api/logs pugui llegir-lo
+LOG_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'worker.log')
+os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+
+from logging.handlers import RotatingFileHandler
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - [WORKER] - %(levelname)s - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        RotatingFileHandler(LOG_FILE, maxBytes=500_000, backupCount=1, encoding='utf-8'),
+    ]
 )
 logger = logging.getLogger(__name__)
 
