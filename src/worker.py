@@ -71,13 +71,13 @@ def _build_email_html(dni, success_zip, type_name, types_str, scope_name, office
             date_html = f'<div style="background:#e8f5e9;border-left:3px solid #2e7d32;padding:6px 10px;margin-top:4px;font-size:13px;color:#1b5e20;border-radius:3px;">Primer buit disponible:<br><strong>{date}</strong></div>' if date else ''
             rows.append(f'''
             <div style="padding:12px 14px;border-bottom:1px solid #e0e0e0;">
-                <div style="display:flex;align-items:flex-start;gap:10px;">
-                    <div style="background:#00796b;color:white;width:28px;height:28px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-weight:bold;font-size:13px;flex-shrink:0;">{letter}</div>
-                    <div style="flex:1;">
+                <table cellpadding="0" cellspacing="0" border="0"><tr>
+                    <td style="vertical-align:top;padding-right:10px;"><div style="background:#00796b;color:white;width:28px;height:28px;border-radius:50%;text-align:center;line-height:28px;font-weight:bold;font-size:13px;">{letter}</div></td>
+                    <td style="vertical-align:top;">
                         <div style="font-weight:600;color:#263238;font-size:14px;">{name}</div>
                         {date_html}
-                    </div>
-                </div>
+                    </td>
+                </tr></table>
             </div>''')
         offices_html = f'''
         <div style="margin-top:20px;">

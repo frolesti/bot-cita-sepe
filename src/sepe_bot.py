@@ -349,13 +349,15 @@ class SepeBot:
                     
                     # Wait for offices or error to appear after channel selection
                     try:
-                        WebDriverWait(self.driver, 12).until(
+                        WebDriverWait(self.driver, 15).until(
                             lambda d: any(kw in d.find_element(By.TAG_NAME, "body").text.lower()
                                           for kw in ["primer hueco", "primer buit",
                                                      "no podemos ofrecerle", "no podem oferir",
                                                      "no hay citas", "no hi ha cites",
                                                      "seleccione la oficina", "seleccioneu l'oficina",
-                                                     "listado de oficinas", "llistat d'oficines"])
+                                                     "listado de oficinas", "llistat d'oficines",
+                                                     "en estos momentos no podemos",
+                                                     "no existen huecos"])
                         )
                         logging.debug("Contingut detectat després de selecció de canal.")
                     except:
@@ -552,8 +554,6 @@ class SepeBot:
             "no existeixen buits disponibles",
             "ha superat el nombre",
             "ha superado el n\u00famero",
-            "en la oficina seleccionada",
-            "a l'oficina seleccionada",
         ]
         
         for phrase in negative_phrases:
