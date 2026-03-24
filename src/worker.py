@@ -92,7 +92,7 @@ def check_single_zip(dni, data, zip_code):
             bot.close()
         except:
             pass
-        return False, None, None
+        return False, None, None, []
 
 def run_worker():
     logger.info("Iniciant Worker del Bot SEPE...")

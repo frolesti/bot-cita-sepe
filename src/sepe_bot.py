@@ -104,36 +104,43 @@ class SepeBot:
             # 3. Emplenar CP
             logging.debug("Emplenant CP...")
             try:
-                # Try robust Select2 interaction first
-                try:
-                    # Wait for the specific Select2 container for CP
-                    # We assume ID is datosCodigoPostal as per scraping analysis
-                    select2_container = WebDriverWait(self.driver, 10).until(EC.element_to_be_clickable((By.CSS_SELECTOR, ".select2-selection[aria-labelledby='select2-datosCodigoPostal-container']")))
-                    select2_container.click()
-                    
-                    search_box = WebDriverWait(self.driver, 5).until(EC.visibility_of_element_located((By.CLASS_NAME, "select2-search__field")))
-                    search_box.send_keys(zip_code)
-                    time.sleep(1)
-                    search_box.send_keys(Keys.ENTER)
-                    logging.debug("CP introduït via Select2 natiu.")
-                except Exception as e:
-                    logging.debug(f"Error Select2 natiu: {e}. Provant fallback JS...")
-                    # Fallback JS
-                    self.driver.execute_script("""
-                        var newOption = new Option(arguments[1], arguments[1], true, true);
-                        $('#datosCodigoPostal').append(newOption).trigger('change');
-                        if(typeof seleccionDeCodigoPostal === 'function') { seleccionDeCodigoPostal(); }
-                    """, self.driver.find_element(By.ID, "datosCodigoPostal"), zip_code)
-                    logging.debug("CP introduït via JS.")
+                # Use JS method directly - Select2 gives stale elements inside iframe
+                cp_elem = WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.ID, "datosCodigoPostal")))
+                self.driver.execute_script("""
+                    var sel = arguments[0];
+                    var cp = arguments[1];
+                    // Clear existing and add our option
+                    var newOption = new Option(cp, cp, true, true);
+                    sel.appendChild(newOption);
+                    sel.value = cp;
+                    // Trigger change events for Select2 and any listeners
+                    $(sel).val(cp).trigger('change');
+                    if(typeof seleccionDeCodigoPostal === 'function') { seleccionDeCodigoPostal(); }
+                """, cp_elem, zip_code)
+                logging.debug(f"CP {zip_code} introduït via JS.")
+                time.sleep(2)  # Wait for AJAX to load tramites
             except Exception as e:
                 logging.error(f"Error general emplenant CP: {e}")
                 raise e
 
-            # 4. Seleccionar Tràmit (MOVED BEFORE DNI)
+            # 3b. Seleccionar "Tipus d'oficina de gestió" (comboNivelServicio1 = PRESTACIONES)
+            logging.debug("Seleccionant Tipus d'oficina de gestió (Nivell 1)...")
             try:
-                # Wait for comboNivelServicio2 (Trámite)
-                # Note: comboNivelServicio1 is usually "PRESTACIONES" and auto-selected.
-                
+                nivel1_elem = WebDriverWait(self.driver, 8).until(
+                    EC.visibility_of_element_located((By.ID, "comboNivelServicio1"))
+                )
+                nivel1_select = Select(nivel1_elem)
+                # Select PRESTACIONES (first non-placeholder option, value 146)
+                if len(nivel1_select.options) > 1:
+                    nivel1_select.select_by_index(1)
+                    logging.info(f"Nivell 1 seleccionat: {nivel1_select.first_selected_option.text}")
+                time.sleep(2)  # Wait for level 2 options to load via AJAX
+            except Exception as e:
+                logging.debug(f"comboNivelServicio1 no trobat o ja seleccionat: {e}")
+
+            # 4. Seleccionar Tràmit (comboNivelServicio2)
+            try:
                 # Wait for the element to be present and visible
                 tramite_select_elem = WebDriverWait(self.driver, 10).until(EC.visibility_of_element_located((By.ID, "comboNivelServicio2")))
                 tramite_select = Select(tramite_select_elem)
@@ -149,13 +156,23 @@ class SepeBot:
                     else:
                         logging.warning("No hi ha opcions de tràmit disponibles.")
 
-                # 5. Seleccionar Subtràmit (if applicable)
-                if subtramite_id:
-                    time.sleep(1) # Wait for load
-                    subtramite_select_elem = WebDriverWait(self.driver, 5).until(EC.visibility_of_element_located((By.ID, "comboNivelServicio3")))
+                # 5. Seleccionar Subtràmit (comboNivelServicio3) - OBLIGATORI
+                time.sleep(1)  # Wait for subtramite combo to load
+                try:
+                    subtramite_select_elem = WebDriverWait(self.driver, 5).until(
+                        EC.visibility_of_element_located((By.ID, "comboNivelServicio3"))
+                    )
                     subtramite_select = Select(subtramite_select_elem)
-                    subtramite_select.select_by_value(subtramite_id)
-                    logging.debug(f"Subtràmit {subtramite_id} seleccionat.")
+                    if subtramite_id:
+                        subtramite_select.select_by_value(subtramite_id)
+                        logging.info(f"Subtràmit {subtramite_id} seleccionat.")
+                    elif len(subtramite_select.options) > 1:
+                        # Auto-select first non-placeholder option
+                        subtramite_select.select_by_index(1)
+                        logging.info(f"Subtràmit auto-seleccionat: {subtramite_select.first_selected_option.text}")
+                    time.sleep(1)
+                except Exception as e_sub:
+                    logging.debug(f"Subtràmit (comboNivelServicio3) no requerit o no trobat: {e_sub}")
                 
             except Exception as e:
                 logging.warning(f"No s'ha pogut seleccionar el tràmit automàticament: {e}")
@@ -224,14 +241,17 @@ class SepeBot:
                     
                     # Llista de selectors possibles per al botó
                     selectors = [
+                        (By.ID, "btnContinuar1"),
                         (By.ID, "btnAceptar"),
                         (By.ID, "btnContinuar"),
+                        (By.CSS_SELECTOR, "[id^='btnContinuar']"),
+                        (By.CSS_SELECTOR, "input[type='button'][id*='Continuar']"),
                         (By.XPATH, "//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'continuar')]"),
                         (By.XPATH, "//button[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'aceptar')]"),
                         (By.XPATH, "//input[@type='submit']"),
-                        (By.XPATH, "//input[@type='button' and contains(@value, 'Continuar')]"),
+                        (By.XPATH, "//input[@type='button']"),
                         (By.CSS_SELECTOR, "button.btn-primary"),
-                        (By.CSS_SELECTOR, ".boton_azul") # Classe comuna en webs antigues
+                        (By.CSS_SELECTOR, ".boton_azul")
                     ]
                     
                     for by, value in selectors:
@@ -285,7 +305,20 @@ class SepeBot:
                             break
                     
                     self._select_channel(channel_select_elem, appt_type)
-                    time.sleep(3)  # Esperem AJAX
+                    
+                    # Wait for offices or error to appear after channel selection
+                    try:
+                        WebDriverWait(self.driver, 12).until(
+                            lambda d: any(kw in d.find_element(By.TAG_NAME, "body").text.lower()
+                                          for kw in ["primer hueco", "primer buit",
+                                                     "no podemos ofrecerle", "no podem oferir",
+                                                     "no hay citas", "no hi ha cites",
+                                                     "seleccione la oficina", "seleccioneu l'oficina",
+                                                     "listado de oficinas", "llistat d'oficines"])
+                        )
+                        logging.debug("Contingut detectat després de selecció de canal.")
+                    except:
+                        logging.debug("Timeout esperant contingut després de selecció de canal (12s).")
                     
                     found = self._check_page_result(zip_code, dni)
                     results[appt_type] = found
@@ -352,17 +385,30 @@ class SepeBot:
             if appt_type == 'phone':
                 target_text = "telefonica"  # Sense accent per matching més flexible
             
+            selected = False
             for index, text in enumerate(options_text):
                 if target_text in text or (appt_type == 'phone' and 'telef' in text):
                     select_obj.select_by_index(index)
+                    selected = True
                     type_name = 'Presencial' if appt_type == 'person' else 'Telefònica'
                     logging.debug(f"Canal '{type_name}' seleccionat (opció: '{text}').")
-                    return True
+                    break
             
-            # Fallback: primer no-placeholder
-            if len(select_obj.options) > 1:
-                select_obj.select_by_index(1)
-                logging.debug("Canal per defecte seleccionat (no s'ha trobat l'específic).")
+            if not selected:
+                # Fallback: primer no-placeholder
+                if len(select_obj.options) > 1:
+                    select_obj.select_by_index(1)
+                    logging.debug("Canal per defecte seleccionat (no s'ha trobat l'específic).")
+            
+            # Trigger change event AND call SEPE's own handlers directly
+            self.driver.execute_script("""
+                var el = arguments[0];
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+                if (typeof $ !== 'undefined') { $(el).trigger('change'); }
+                if (typeof limpiarMensajes === 'function') { limpiarMensajes(); }
+                if (typeof cargaOficinasMapa === 'function') { cargaOficinasMapa(); }
+            """, channel_select_elem)
+            
             return True
         except Exception as e:
             logging.warning(f"Error seleccionant canal: {e}")
@@ -371,40 +417,22 @@ class SepeBot:
     def _check_page_result(self, zip_code, dni):
         """Comprova la pàgina actual per determinar si hi ha disponibilitat."""
         time.sleep(2)
-        page_source = self.driver.page_source.lower()
         
-        # Frases que indiquen NO disponibilitat (castellà i català)
-        negative_phrases = [
-            "no hay citas",
-            "no hi ha cites",
-            "no existe disponibilidad",
-            "no existeix disponibilitat",
-            "no podemos ofrecerle cita",
-            "no podem oferir-li cita",
-            "no podemos ofrecerle citas",
-            "el horario de atenci\u00f3n",
-            "l'horari d'atenci\u00f3",
-            "int\u00e9ntelo de nuevo",
-            "torneu-ho a intentar",
-            "no se han encontrado citas",
-            "no s'han trobat cites"
-        ]
+        # Use VISIBLE text only — page_source includes i18n/JS strings that cause
+        # false negatives (e.g. 'no podemos ofrecerle cita' in message bundles)
+        try:
+            visible_text = self.driver.find_element(By.TAG_NAME, "body").text.lower()
+        except:
+            visible_text = ""
         
-        for phrase in negative_phrases:
-            if phrase in page_source:
-                logging.debug(f"Resultat NEGATIU detectat per frase: '{phrase}'")
-                return False
+        logging.debug(f"Visible text ({len(visible_text)} chars): {visible_text[:300]}...")
         
-        # Indicadors positius forts (castellà i català)
+        # === POSITIVE indicators FIRST (castellà i català) ===
         positive_indicators = [
-            # Llistat d'oficines (pas 2 del SEPE)
+            # Llistat d'oficines (pas 2 del SEPE) - SPECIFIC phrases only
             "primer hueco disponible",
             "primer buit disponible",
-            "oficinas disponibles",
-            "oficines disponibles",
-            "seleccione el canal",
-            "seleccioneu el canal",
-            # Selecció d'oficina
+            # NOTE: "oficinas disponibles" removed - matches instructional text
             "seleccione la oficina",
             "seleccioneu l'oficina",
             "seleccione una oficina",
@@ -424,23 +452,19 @@ class SepeBot:
         ]
         
         for indicator in positive_indicators:
-            if indicator in page_source:
+            if indicator in visible_text:
                 logging.info(f"Resultat POSITIU detectat per indicador: '{indicator}'")
                 self._save_debug_snapshot("success")
                 return True
         
-        # Comprovar elements HTML de resultat positiu
+        # Check positive HTML elements (only specific, reliable ones)
         positive_elements = [
-            (By.NAME, "idOficina"),
             (By.CLASS_NAME, "tablaOferta"),
-            # Checkboxes d'oficines al llistat del SEPE
             (By.CSS_SELECTOR, "input[type='checkbox'][name*='oficina']"),
             (By.CSS_SELECTOR, "input[type='checkbox'][name*='Oficina']"),
             (By.CSS_SELECTOR, ".oficina-card"),
-            (By.CSS_SELECTOR, "[class*='disponible']"),
-            # Mapa d'oficines
-            (By.CSS_SELECTOR, ".leaflet-container"),
-            (By.CSS_SELECTOR, "[class*='mapa']"),
+            # NOTE: [class*='disponible'], [class*='mapa'], .leaflet-container
+            # removed — they match page-structure elements always present on step 2
         ]
         
         for by, selector in positive_elements:
@@ -453,6 +477,45 @@ class SepeBot:
                     return True
             except:
                 continue
+        
+        # === NEGATIVE phrases (only in visible text, not page_source) ===
+        negative_phrases = [
+            "no hay citas",
+            "no hi ha cites",
+            "no existe disponibilidad",
+            "no existeix disponibilitat",
+            "no podemos ofrecerle cita",
+            "no podem oferir-li cita",
+            "no podemos ofrecerle citas",
+            "el horario de atenci\u00f3n",
+            "l'horari d'atenci\u00f3",
+            "int\u00e9ntelo de nuevo",
+            "torneu-ho a intentar",
+            "no se han encontrado citas",
+            "no s'han trobat cites",
+            # Errors de formulari (pas 1 no superat)
+            "no ha seleccionat cap",
+            "no ha seleccionado ning",
+            "camps obligatoris",
+            "campos obligatorios",
+            "no existeixen gestions disponibles",
+            "no existen gestiones disponibles",
+            "no es posible solicitar cita",
+            "en estos momentos no podemos ofrecer",
+            "en aquests moments no podem oferir",
+            "no existen huecos disponibles",
+            "no existeixen buits disponibles",
+            "ha superat el nombre",
+            "ha superado el n\u00famero",
+            "en la oficina seleccionada",
+            "a l'oficina seleccionada",
+        ]
+        
+        for phrase in negative_phrases:
+            if phrase in visible_text:
+                logging.debug(f"Resultat NEGATIU detectat per frase: '{phrase}'")
+                self._save_debug_snapshot("negative")
+                return False
 
         logging.warning("Resultat incert. No s'ha trobat ni error ni confirmació clara.")
         self._save_debug_snapshot("uncertain")
