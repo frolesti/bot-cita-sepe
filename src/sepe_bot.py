@@ -567,49 +567,57 @@ class SepeBot:
         return False
 
     def _extract_offices(self):
-        """Extreu informacio de les oficines disponibles de la pagina de resultats."""
+        """Extreu oficines disponibles com a llista de dicts {name, date}.
+
+        Usa text visible (no page_source) per evitar tags HTML residuals.
+        El text del SEPE segueix el patró:
+            A. NOM OFICINA - SEPE
+            Primer hueco disponible:
+            día, DD de mes de YYYY, HH:MM
+        """
         offices = []
         try:
-            page_source = self.driver.page_source
-            
-            # Patro 1: "Primer hueco/buit disponible: <data>"
-            pattern_hueco = re.compile(
-                r'(?:primer\s+(?:hueco|buit)\s+disponible[:\s]*)(.+?\d{1,2}:\d{2})',
-                re.IGNORECASE
-            )
-            matches = pattern_hueco.findall(page_source)
-            for m in matches:
-                offices.append(m.strip())
-            
-            # Patro 2: Oficines amb nom
-            try:
-                office_elements = self.driver.find_elements(By.CSS_SELECTOR, 
-                    ".oficina-card, .tablaOferta tr, [class*='oficina'], label[for*='oficina']")
-                for el in office_elements:
-                    text = el.text.strip()
-                    if text and len(text) > 5 and text not in offices:
-                        offices.append(text[:200])
-            except:
-                pass
-            
-            # Patro 3: Si no hem trobat res, agafar text visible rellevant
+            body_text = self.driver.find_element(By.TAG_NAME, "body").text
+            lines = [l.strip() for l in body_text.split('\n') if l.strip()]
+
+            # Patró: "A. NOM - SEPE" seguit de "Primer hueco/buit disponible:" + data
+            i = 0
+            while i < len(lines):
+                line = lines[i]
+                # Detectar línia de nom d'oficina: "A. ...", "B. ...", etc.
+                if re.match(r'^[A-Z]\.\s+', line):
+                    name = line
+                    date_str = ''
+                    # Buscar "Primer hueco/buit disponible:" a continuació
+                    for j in range(i + 1, min(i + 4, len(lines))):
+                        if re.match(r'primer\s+(?:hueco|buit)\s+disponible', lines[j], re.IGNORECASE):
+                            # La data pot estar a la mateixa línia o a la següent
+                            rest = re.sub(r'primer\s+(?:hueco|buit)\s+disponible[:\s]*', '', lines[j], flags=re.IGNORECASE).strip()
+                            if rest and re.search(r'\d{1,2}:\d{2}', rest):
+                                date_str = rest
+                            elif j + 1 < len(lines) and re.search(r'\d{1,2}:\d{2}', lines[j + 1]):
+                                date_str = lines[j + 1].strip()
+                            break
+                    offices.append({'name': name, 'date': date_str})
+                i += 1
+
+            # Fallback: si no hem trobat el patró A./B., buscar per "Primer hueco"
             if not offices:
-                try:
-                    body_text = self.driver.find_element(By.TAG_NAME, "body").text
-                    for line in body_text.split('\n'):
-                        line = line.strip()
-                        if line and ('disponible' in line.lower() or 'oficina' in line.lower() or re.search(r'\d{1,2}:\d{2}', line)):
-                            if len(line) > 5 and line not in offices:
-                                offices.append(line[:200])
-                except:
-                    pass
-            
+                for i, line in enumerate(lines):
+                    if re.match(r'primer\s+(?:hueco|buit)\s+disponible', line, re.IGNORECASE):
+                        rest = re.sub(r'primer\s+(?:hueco|buit)\s+disponible[:\s]*', '', line, flags=re.IGNORECASE).strip()
+                        date_str = rest if rest and re.search(r'\d{1,2}:\d{2}', rest) else ''
+                        if not date_str and i + 1 < len(lines) and re.search(r'\d{1,2}:\d{2}', lines[i + 1]):
+                            date_str = lines[i + 1].strip()
+                        if date_str:
+                            offices.append({'name': f'Oficina {len(offices) + 1}', 'date': date_str})
+
             if offices:
                 logging.info(f"Oficines extretes: {len(offices)} entrades")
-            
+
         except Exception as e:
             logging.debug(f"Error extraient oficines: {e}")
-        
+
         return offices[:20]
 
     def _save_debug_snapshot(self, prefix):

@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-def send_email(to_email, subject, body):
+def send_email(to_email, subject, body_html):
     sender_email = os.getenv('MAIL_USERNAME')
     sender_password = os.getenv('MAIL_PASSWORD')
     smtp_server = "smtp.gmail.com"
@@ -36,19 +36,108 @@ def send_email(to_email, subject, body):
         return
 
     try:
-        msg = MIMEMultipart()
+        msg = MIMEMultipart('alternative')
         msg['From'] = sender_email
         msg['To'] = to_email
         msg['Subject'] = subject
-        msg.attach(MIMEText(body, 'plain'))
+        msg.attach(MIMEText(body_html, 'html', 'utf-8'))
 
         with smtplib.SMTP_SSL(smtp_server, smtp_port) as server:
             server.login(sender_email, sender_password)
             server.send_message(msg)
-        
+
         logger.info(f"Correu enviat correctament a {to_email}")
     except Exception as e:
         logger.error(f"Error enviant correu: {e}")
+
+
+def _build_email_html(dni, success_zip, type_name, types_str, scope_name, offices_info):
+    """Genera un email HTML estilitzat similar a la pàgina de resultats del SEPE."""
+    now_str = datetime.now().strftime('%d/%m/%Y %H:%M')
+    sepe_url = 'https://sede.sepe.gob.es/portalSede/procedimientos-y-servicios/personas/proteccion-por-desempleo/cita-previa/cita-previa-solicitud.html'
+
+    # Construir llista d'oficines
+    offices_html = ''
+    if offices_info:
+        rows = []
+        for i, office in enumerate(offices_info):
+            if isinstance(office, dict):
+                name = office.get('name', f'Oficina {i+1}')
+                date = office.get('date', '')
+            else:
+                name = str(office)
+                date = ''
+            letter = chr(65 + i) if i < 26 else str(i + 1)  # A, B, C...
+            date_html = f'<div style="background:#e8f5e9;border-left:3px solid #2e7d32;padding:6px 10px;margin-top:4px;font-size:13px;color:#1b5e20;border-radius:3px;">Primer buit disponible:<br><strong>{date}</strong></div>' if date else ''
+            rows.append(f'''
+            <div style="padding:12px 14px;border-bottom:1px solid #e0e0e0;">
+                <div style="display:flex;align-items:flex-start;gap:10px;">
+                    <div style="background:#00796b;color:white;width:28px;height:28px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-weight:bold;font-size:13px;flex-shrink:0;">{letter}</div>
+                    <div style="flex:1;">
+                        <div style="font-weight:600;color:#263238;font-size:14px;">{name}</div>
+                        {date_html}
+                    </div>
+                </div>
+            </div>''')
+        offices_html = f'''
+        <div style="margin-top:20px;">
+            <div style="background:#00796b;color:white;padding:10px 14px;font-weight:600;font-size:14px;border-radius:6px 6px 0 0;">Oficines disponibles</div>
+            <div style="border:1px solid #e0e0e0;border-top:none;border-radius:0 0 6px 6px;background:white;">
+                {''.join(rows)}
+            </div>
+        </div>'''
+
+    return f'''
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#f5f5f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+<div style="max-width:560px;margin:20px auto;background:white;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+
+    <!-- Header -->
+    <div style="background:#00796b;padding:24px 20px;text-align:center;">
+        <div style="font-size:28px;margin-bottom:6px;">&#9989;</div>
+        <div style="color:white;font-size:22px;font-weight:700;letter-spacing:0.5px;">Cita Disponible!</div>
+        <div style="color:#b2dfdb;font-size:13px;margin-top:4px;">{now_str}</div>
+    </div>
+
+    <!-- Info -->
+    <div style="padding:20px;">
+        <table style="width:100%;border-collapse:collapse;font-size:14px;color:#37474f;">
+            <tr>
+                <td style="padding:8px 0;color:#78909c;width:130px;">DNI</td>
+                <td style="padding:8px 0;font-weight:600;">{dni}</td>
+            </tr>
+            <tr>
+                <td style="padding:8px 0;color:#78909c;">Codi Postal</td>
+                <td style="padding:8px 0;font-weight:600;">{success_zip}</td>
+            </tr>
+            <tr>
+                <td style="padding:8px 0;color:#78909c;">Tipus trobat</td>
+                <td style="padding:8px 0;"><span style="background:#e8f5e9;color:#2e7d32;padding:2px 10px;border-radius:12px;font-weight:600;font-size:13px;">{type_name}</span></td>
+            </tr>
+            <tr>
+                <td style="padding:8px 0;color:#78909c;">Zona</td>
+                <td style="padding:8px 0;">{scope_name}</td>
+            </tr>
+        </table>
+
+        {offices_html}
+
+        <!-- CTA Button -->
+        <div style="text-align:center;margin-top:24px;">
+            <a href="{sepe_url}" style="display:inline-block;background:#d32f2f;color:white;text-decoration:none;padding:14px 32px;border-radius:6px;font-weight:700;font-size:15px;letter-spacing:0.3px;">Reservar cita ara &rarr;</a>
+        </div>
+        <p style="text-align:center;color:#90a4ae;font-size:12px;margin-top:12px;">El bot <strong>no</strong> reserva automàticament. Ves a la web del SEPE per completar la reserva.</p>
+    </div>
+
+    <!-- Footer -->
+    <div style="background:#fafafa;padding:14px 20px;text-align:center;border-top:1px solid #e0e0e0;">
+        <span style="color:#b0bec5;font-size:12px;">Bot Cita SEPE &mdash; <a href="https://frolesti.aixeta.cat/ca" style="color:#00796b;text-decoration:none;">frolesti.aixeta.cat</a></span>
+    </div>
+</div>
+</body>
+</html>'''
 
 def check_single_zip(dni, data, zip_code):
     """Comprova un sol codi postal."""
@@ -230,29 +319,12 @@ def run_worker():
                         appt_types = data.get('appt_types', [data.get('type', 'person')])
                         types_str = ' i '.join(['Presencial' if t == 'person' else 'Telefònica' for t in appt_types])
                         
-                        # Construir info d'oficines per al correu
-                        offices_text = ''
-                        if offices_info:
-                            offices_lines = []
-                            for i, office in enumerate(offices_info, 1):
-                                offices_lines.append(f'  {i}. {office}')
-                            offices_text = chr(10)*2 + 'OFICINES DISPONIBLES:' + chr(10) + '-'*40 + chr(10) + chr(10).join(offices_lines) + chr(10) + '-'*40
-                        
-                        # Enviar Email amb info d'oficines
-                        email_body = (
-                            f"EL BOT HA TROBAT UNA CITA!\n\n"
-                            f"DNI: {dni}\n"
-                            f"Codi Postal: {success_zip}\n"
-                            f"Tipus trobat: {type_name}\n"
-                            f"Tipus cercats: {types_str}\n"
-                            f"Zona: {data.get('scope_name')}\n"
-                            f"Data: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}\n"
-                            f"{offices_text}\n\n"
-                            f"VES RAPIDAMENT a la web del SEPE per reservar la cita!\n"
-                            f"https://sede.sepe.gob.es/portalSede/procedimientos-y-servicios/personas/proteccion-por-desempleo/cita-previa/cita-previa-solicitud.html\n\n"
-                            f"-- Bot Cita SEPE"
+                        # Enviar Email HTML estilitzat
+                        email_html = _build_email_html(
+                            dni, success_zip, type_name, types_str,
+                            data.get('scope_name', ''), offices_info
                         )
-                        send_email(data.get('email'), "CITA SEPE TROBADA!", email_body)
+                        send_email(data.get('email'), f"\U00002705 CITA SEPE TROBADA! ({type_name} a {success_zip})", email_html)
                         updates_made = True
                         
                     else:
