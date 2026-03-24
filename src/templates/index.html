@@ -198,11 +198,24 @@
             color: var(--gray-500);
             border-bottom: 2px solid var(--gray-200);
             padding: 0.6rem 0.75rem;
+            white-space: nowrap;
         }
         .table td {
             vertical-align: middle;
             padding: 0.6rem 0.75rem;
             border-color: var(--gray-100);
+        }
+        .table td:last-child {
+            min-width: 130px;
+        }
+        .table td:last-child .d-flex {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 0.35rem !important;
+        }
+        .table td:last-child .btn {
+            white-space: nowrap;
+            width: 100%;
         }
         .table tbody tr:hover {
             background: var(--gray-50);
@@ -615,7 +628,7 @@
                         <td>
                             {% set msg = data.status_message or '' %}
                             {% set is_searching = data.active and 'En pausa' not in msg and 'Cicle completat' not in msg %}
-                            <div class="d-flex gap-1 flex-wrap">
+                            <div class="d-flex">
                             {% if is_searching %}
                                 <button class="btn btn-warning btn-sm action-btn" onclick="stopSearch('{{ dni }}')">
                                     <i class="bi bi-pause-fill"></i> Aturar
@@ -625,7 +638,7 @@
                                     <i class="bi bi-arrow-clockwise"></i> Reiniciar
                                 </button>
                                 <button class="btn btn-danger btn-sm action-btn" onclick="deleteSearch('{{ dni }}')">
-                                    <i class="bi bi-trash"></i>
+                                    <i class="bi bi-trash"></i> Esborrar
                                 </button>
                             {% endif %}
                             </div>
@@ -1101,7 +1114,7 @@
                         var $td = $row.find('.action-btn').closest('td');
                         $td.find('.d-flex').html(
                             '<button class="btn btn-success btn-sm restart-btn" onclick="restartSearch(\'' + dni + '\')"><i class="bi bi-arrow-clockwise"></i> Reiniciar</button>' +
-                            '<button class="btn btn-danger btn-sm action-btn" onclick="deleteSearch(\'' + dni + '\')"><i class="bi bi-trash"></i></button>'
+                            '<button class="btn btn-danger btn-sm action-btn" onclick="deleteSearch(\'' + dni + '\')"><i class="bi bi-trash"></i> Esborrar</button>'
                         );
                         checkSubmitBlock();
                     }
@@ -1275,7 +1288,7 @@
                         } else {
                             $actionTd.find('.d-flex').html(
                                 '<button class="btn btn-success btn-sm restart-btn" onclick="restartSearch(\'' + dni + '\')"><i class="bi bi-arrow-clockwise"></i> Reiniciar</button>' +
-                                '<button class="btn btn-danger btn-sm action-btn" onclick="deleteSearch(\'' + dni + '\')"><i class="bi bi-trash"></i></button>'
+                                '<button class="btn btn-danger btn-sm action-btn" onclick="deleteSearch(\'' + dni + '\')"><i class="bi bi-trash"></i> Esborrar</button>'
                             );
                         }
 

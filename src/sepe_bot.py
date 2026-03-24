@@ -107,18 +107,59 @@ class SepeBot:
                 # Use JS method directly - Select2 gives stale elements inside iframe
                 cp_elem = WebDriverWait(self.driver, 10).until(
                     EC.presence_of_element_located((By.ID, "datosCodigoPostal")))
+                # SEPE stores all CP data (including lat/lng) in a hidden input
+                # #mapaListadosCp as HTML-entity-encoded JSON keyed by 3-digit prefix.
+                # getCP() reads data-latitud/data-longitud from the selected <option>.
+                # cargaOficinasMapa() needs these coords to find nearby offices.
+                # Without coordinates, SEPE returns "no podemos ofrecerle citas".
                 self.driver.execute_script("""
                     var sel = arguments[0];
                     var cp = arguments[1];
-                    // Clear existing and add our option
+                    var prefix = cp.substring(0, 3);
+                    var lat = 0, lng = 0;
+                    
+                    // Read coords from #mapaListadosCp hidden field (the real source)
+                    try {
+                        var mapaCp = document.getElementById('mapaListadosCp');
+                        if (mapaCp && mapaCp.value) {
+                            var allData = JSON.parse(mapaCp.value);
+                            var cpList = allData[prefix];
+                            if (cpList) {
+                                for (var i = 0; i < cpList.length; i++) {
+                                    if (cpList[i].codigo === cp) {
+                                        lat = cpList[i].latitud;
+                                        lng = cpList[i].longitud;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    } catch(e) { console.error('Error parsing mapaListadosCp:', e); }
+                    
+                    // Create option with data attributes (for getCP())
                     var newOption = new Option(cp, cp, true, true);
+                    newOption.setAttribute('data-latitud', lat);
+                    newOption.setAttribute('data-longitud', lng);
                     sel.appendChild(newOption);
                     sel.value = cp;
+                    
+                    // Set hidden lat/lng fields directly (for AJAX params)
+                    $('#latitudCP').val(lat);
+                    $('#longitudCP').val(lng);
+                    
                     // Trigger change events for Select2 and any listeners
                     $(sel).val(cp).trigger('change');
                     if(typeof seleccionDeCodigoPostal === 'function') { seleccionDeCodigoPostal(); }
                 """, cp_elem, zip_code)
-                logging.debug(f"CP {zip_code} introduït via JS.")
+                
+                # Verify lat/lng were set
+                lat_val = self.driver.execute_script("return $('#latitudCP').val()")
+                lng_val = self.driver.execute_script("return $('#longitudCP').val()")
+                logging.debug(f"CP {zip_code} introduït via JS. Coords: lat={lat_val}, lng={lng_val}")
+                
+                if not lat_val or lat_val == '0' or lat_val == '':
+                    logging.warning(f"⚠️ latitudCP buit després d'injectar coords!")
+                
                 time.sleep(2)  # Wait for AJAX to load tramites
             except Exception as e:
                 logging.error(f"Error general emplenant CP: {e}")
@@ -381,26 +422,30 @@ class SepeBot:
             options_text = [o.text.lower() for o in select_obj.options]
             logging.debug(f"Opcions de canal disponibles: {options_text}")
             
-            target_text = "presencial" if appt_type == 'person' else "telef\u00f3nica"
-            if appt_type == 'phone':
-                target_text = "telefonica"  # Sense accent per matching més flexible
+            # SEPE uses specific values: 1=Presencial, 3=Telefònica
+            if appt_type == 'person':
+                try:
+                    select_obj.select_by_value("1")
+                    logging.debug("Canal 'Presencial' seleccionat (value=1).")
+                except:
+                    # Fallback to text matching
+                    for i, text in enumerate(options_text):
+                        if 'presencial' in text:
+                            select_obj.select_by_index(i)
+                            logging.debug(f"Canal 'Presencial' seleccionat per text (opció: '{text}').")
+                            break
+            else:
+                try:
+                    select_obj.select_by_value("3")
+                    logging.debug("Canal 'Telefònica' seleccionat (value=3).")
+                except:
+                    for i, text in enumerate(options_text):
+                        if 'telef' in text:
+                            select_obj.select_by_index(i)
+                            logging.debug(f"Canal 'Telefònica' seleccionat per text (opció: '{text}').")
+                            break
             
-            selected = False
-            for index, text in enumerate(options_text):
-                if target_text in text or (appt_type == 'phone' and 'telef' in text):
-                    select_obj.select_by_index(index)
-                    selected = True
-                    type_name = 'Presencial' if appt_type == 'person' else 'Telefònica'
-                    logging.debug(f"Canal '{type_name}' seleccionat (opció: '{text}').")
-                    break
-            
-            if not selected:
-                # Fallback: primer no-placeholder
-                if len(select_obj.options) > 1:
-                    select_obj.select_by_index(1)
-                    logging.debug("Canal per defecte seleccionat (no s'ha trobat l'específic).")
-            
-            # Trigger change event AND call SEPE's own handlers directly
+            # Trigger SEPE's own onchange handlers (limpiarMensajes + cargaOficinasMapa)
             self.driver.execute_script("""
                 var el = arguments[0];
                 el.dispatchEvent(new Event('change', { bubbles: true }));
