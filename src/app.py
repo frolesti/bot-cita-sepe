@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session
 from flask_mail import Mail, Message
 import time
+import uuid
 from datetime import datetime, timedelta
 try:
     from zoneinfo import ZoneInfo
@@ -37,7 +38,11 @@ logging.getLogger("werkzeug").addFilter(StatusEndpointFilter())
 load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = os.getenv('SECRET_KEY', 'supersecretkey-canvia-en-produccio')
+app.secret_key = os.getenv('SECRET_KEY') or os.urandom(32).hex()
+
+# Sessió permanent de 30 dies (la cookie no caduca al tancar el navegador)
+from datetime import timedelta as _td
+app.permanent_session_lifetime = _td(days=30)
 
 # Configuració del Correu (Gmail per defecte)
 app.config['MAIL_SERVER'] = 'smtp.gmail.com'
@@ -48,6 +53,45 @@ app.config['MAIL_USE_TLS'] = False
 app.config['MAIL_USE_SSL'] = True
 
 mail = Mail(app)
+
+
+# --- Aïllament per sessió: cada navegador rep un user_id únic ---
+def _get_user_id():
+    """Retorna (o crea) un identificador únic per a la sessió actual."""
+    if 'user_id' not in session:
+        session.permanent = True
+        session['user_id'] = str(uuid.uuid4())
+    return session['user_id']
+
+
+def _get_my_searches(all_searches=None):
+    """Retorna NOMÉS les cerques que pertanyen a la sessió actual."""
+    if all_searches is None:
+        all_searches = load_state()
+    uid = _get_user_id()
+
+    # Migració: cerques sense owner_id → adoptar a la sessió actual
+    adopted = False
+    for dni, data in all_searches.items():
+        if 'owner_id' not in data:
+            data['owner_id'] = uid
+            adopted = True
+    if adopted:
+        save_state(all_searches)
+
+    return {dni: data for dni, data in all_searches.items()
+            if data.get('owner_id') == uid}
+
+
+def _owns_search(dni, all_searches=None):
+    """Comprova si la sessió actual és propietària d'una cerca."""
+    if all_searches is None:
+        all_searches = load_state()
+    search = all_searches.get(dni)
+    if not search:
+        return False
+    return search.get('owner_id') == _get_user_id()
+
 
 # --- Límit de cerques simultànies per evitar sobrecàrrega ---
 MAX_CONCURRENT_SEARCHES = int(os.getenv('MAX_CONCURRENT_SEARCHES', 10))
@@ -65,8 +109,11 @@ except Exception as e:
 
 @app.route('/')
 def index():
-    # Cerques actives des de state.json (compartit amb el worker)
-    active_searches = load_state()
+    # Assegurar que la sessió té un user_id
+    _get_user_id()
+
+    # Només les cerques d'AQUEST usuari
+    active_searches = _get_my_searches()
 
     communities = LocationManager.get_communities()
 
@@ -165,7 +212,7 @@ def start_search():
     # Cerques actives des de state.json (compartit amb el worker)
     active_searches = load_state()
 
-    # --- Protecció de sobrecàrrega ---
+    # --- Protecció de sobrecàrrega (global, no per sessió) ---
     total_active = sum(1 for d in active_searches.values() if d.get('active', False))
     if total_active >= MAX_CONCURRENT_SEARCHES:
         flash(f"Error: El servidor ha arribat al límit de {MAX_CONCURRENT_SEARCHES} cerques simultànies. Espera que alguna finalitzi.")
@@ -204,10 +251,13 @@ def start_search():
 
     if dni and email and scope:
         if dni in active_searches and active_searches[dni].get('active', False):
-            flash(f"Error: Ja existeix una cerca activa per al DNI {dni}. Atura-la primer per crear-ne una de nova.")
+            if _owns_search(dni, active_searches):
+                flash(f"Error: Ja existeix una cerca activa per al DNI {dni}. Atura-la primer per crear-ne una de nova.")
+            else:
+                flash(f"Error: Ja existeix una cerca activa per al DNI {dni} (d'un altre dispositiu).")
             return redirect(url_for('index'))
-        # Netejar la cerca anterior d'aquest DNI si existeix (inactiva)
-        if dni in active_searches:
+        # Netejar la cerca anterior d'aquest DNI si existeix (inactiva) i és nostra
+        if dni in active_searches and _owns_search(dni, active_searches):
             del active_searches[dni]
 
         zips_to_check = LocationManager.get_zips(scope, value, extra_context)
@@ -245,7 +295,8 @@ def start_search():
             'status_message': "Iniciant...",
             'last_result_message': "Pendent de primera execució",
             'tramite_id': tramite_id,
-            'run_id': time.time()
+            'run_id': time.time(),
+            'owner_id': _get_user_id()
         }
         # Guardar a state.json perquè el worker ho vegi
         save_state(active_searches)
@@ -263,8 +314,8 @@ def start_search():
 
 @app.route('/api/status')
 def get_status():
-    """Retorna l'estat actual de totes les cerques actives (state.json) per actualitzar la UI."""
-    active_searches = load_state()
+    """Retorna l'estat de les cerques d'AQUEST usuari (filtrat per owner_id)."""
+    active_searches = _get_my_searches()
     status = {}
     for dni, data in active_searches.items():
         curr_zip = "N/A"
@@ -331,9 +382,9 @@ def get_status():
 
 @app.route('/api/stop/<dni>', methods=['POST'])
 def stop_search_api(dni):
-    """Atura una cerca activa (escriu a state.json perquè el worker ho vegi)."""
+    """Atura una cerca activa (només si pertany a la sessió actual)."""
     active_searches = load_state()
-    if dni in active_searches:
+    if dni in active_searches and _owns_search(dni, active_searches):
         active_searches[dni]['active'] = False
         active_searches[dni]['status_message'] = "Aturat manualment"
         active_searches[dni]['finished_at'] = datetime.now().strftime('%d/%m/%Y %H:%M')
@@ -343,9 +394,9 @@ def stop_search_api(dni):
 
 @app.route('/api/restart/<dni>', methods=['POST'])
 def restart_search_api(dni):
-    """Reinicia una cerca existent (reset index, reactivar)."""
+    """Reinicia una cerca existent (només si pertany a la sessió actual)."""
     active_searches = load_state()
-    if dni in active_searches:
+    if dni in active_searches and _owns_search(dni, active_searches):
         active_searches[dni]['active'] = True
         active_searches[dni]['current_zip_index'] = 0
         active_searches[dni]['cycle_start_time'] = None
@@ -359,9 +410,9 @@ def restart_search_api(dni):
 
 @app.route('/api/delete/<dni>', methods=['POST'])
 def delete_search_api(dni):
-    """Elimina una cerca (escriu a state.json perquè el worker ho vegi)."""
+    """Elimina una cerca (només si pertany a la sessió actual)."""
     active_searches = load_state()
-    if dni in active_searches:
+    if dni in active_searches and _owns_search(dni, active_searches):
         del active_searches[dni]
         save_state(active_searches)
         return jsonify({'status': 'ok', 'message': 'Cerca eliminada'})
