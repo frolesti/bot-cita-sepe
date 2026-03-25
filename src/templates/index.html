@@ -374,19 +374,8 @@
                     </div>
                 </div>
 
-                <!-- 2. Comunitat Autònoma -->
-                <h5 class="mb-3"><span class="step-num">2</span> Selecciona Comunitat Autònoma</h5>
-                <div class="mb-4">
-                    <select class="form-select" id="community" name="community" required onchange="onCommunityChange()" style="width: 100%;">
-                        <option value="">Tria una opció...</option>
-                        {% for comm in communities %}
-                        <option value="{{ comm }}">{{ comm }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-
-                <!-- 3. Tràmit SEPE -->
-                <h5 class="mb-3"><span class="step-num">3</span> Tipus de Tràmit</h5>
+                <!-- 2. Tràmit SEPE -->
+                <h5 class="mb-3"><span class="step-num">2</span> Tipus de Tràmit</h5>
                 <div class="mb-4">
                     <select class="form-select" id="tramite_id" name="tramite_id" style="width: 100%;">
                         {% for name, info in tramits.items() %}
@@ -398,13 +387,9 @@
                     </div>
                 </div>
 
-                <!-- 4. Àmbit de Cerca -->
-                <h5 class="mb-3"><span class="step-num">4</span> Àmbit de Cerca</h5>
+                <!-- 3. Àmbit de Cerca -->
+                <h5 class="mb-3"><span class="step-num">3</span> Àmbit de Cerca</h5>
                 <div id="scope_container">
-                    <fieldset id="scope_fieldset" disabled>
-                    <div id="scope_disabled_msg" class="text-muted mb-3" style="font-size: 0.85rem;">
-                        <i class="bi bi-info-circle"></i> Selecciona una Comunitat Autònoma primer per configurar l'àmbit de cerca.
-                    </div>
                     
                     <!-- Dual Toggle -->
                     <div class="btn-group w-100 mb-3" role="group">
@@ -424,7 +409,7 @@
                         </div>
                     </div>
 
-                    <!-- Location Selectors Section -->
+                    <!-- Location Selectors Section (hidden by default) -->
                     <div id="section_location_selectors" class="mb-4" style="display:none;">
                         <!-- Hidden scope radios for backend compatibility -->
                         <div class="d-none">
@@ -435,29 +420,38 @@
                             <input type="radio" name="scope" id="scope_zip" value="zip">
                         </div>
 
-                        <div class="mb-3" id="div_provincia_wrapper">
+                        <div class="mb-3">
+                            <label class="form-label">Comunitat Autònoma</label>
+                            <select class="form-select" id="community" name="community" style="width: 100%;">
+                                <option value="">Tria una opció...</option>
+                                {% for comm in communities %}
+                                <option value="{{ comm }}">{{ comm }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="mb-3" id="div_provincia_wrapper" style="display:none;">
                             <label class="form-label">Província</label>
                             <select class="form-select" id="provincia_select" name="provincia_select" multiple onchange="onProvinceChange()" style="width: 100%;">
                             </select>
                         </div>
 
-                        <div class="mb-3" id="div_comarca_wrapper">
+                        <div class="mb-3" id="div_comarca_wrapper" style="display:none;">
                             <label class="form-label">Comarca</label>
                             <select class="form-select" id="comarca_select" name="comarca_select" multiple onchange="onComarcaChange()" style="width: 100%;">
                             </select>
                         </div>
 
-                        <div class="mb-3" id="div_municipi_wrapper">
+                        <div class="mb-3" id="div_municipi_wrapper" style="display:none;">
                             <label class="form-label">Municipi</label>
                             <select class="form-select" id="municipi_select" name="municipi_select" multiple style="width: 100%;" disabled>
                             </select>
                         </div>
                     </div>
-                    </fieldset>
                 </div>
 
-                <!-- 5. Tipus de Cita -->
-                <h5 class="mb-3"><span class="step-num">5</span> Tipus de Cita</h5>
+                <!-- 4. Tipus de Cita -->
+                <h5 class="mb-3"><span class="step-num">4</span> Tipus de Cita</h5>
                 <div class="mb-4">
                     <div class="form-check form-check-inline">
                         <input class="form-check-input" type="checkbox" name="appt_type" id="appt_person" value="person"
@@ -474,8 +468,8 @@
                     </div>
                 </div>
 
-                <!-- 6. Recurrència -->
-                <h5 class="mb-3"><span class="step-num">6</span> Recurrència de la cerca</h5>
+                <!-- 5. Recurrència -->
+                <h5 class="mb-3"><span class="step-num">5</span> Recurrència de la cerca</h5>
                 <div class="mb-4">
                     <div class="form-check mb-2">
                         <input class="form-check-input" type="radio" name="freq_type" id="freq_once" value="once" {% if last_freq_type == 'once' %}checked{% endif %} onclick="toggleFreqOptions()">
@@ -621,8 +615,8 @@
                             {% set is_searching = data.active and 'En pausa' not in msg and 'Cicle completat' not in msg %}
                             <div class="d-flex">
                             {% if is_searching %}
-                                <button class="btn btn-warning btn-sm action-btn" onclick="stopSearch('{{ dni }}')">
-                                    <i class="bi bi-pause-fill"></i> Aturar
+                                <button class="btn btn-warning btn-sm action-btn" onclick="stopSearch('{{ dni }}')" title="Aturar">
+                                    <i class="bi bi-pause-fill"></i>
                                 </button>
                             {% else %}
                                 <button class="btn btn-success btn-sm restart-btn" onclick="restartSearch('{{ dni }}')" title="Reiniciar">
@@ -697,7 +691,8 @@
             // Initialize Select2
             $('#community').select2({
                 placeholder: "Tria una opció...",
-                allowClear: true
+                allowClear: true,
+                dropdownParent: $('#section_location_selectors')
             });
             
             $('#provincia_select').select2({
@@ -756,24 +751,23 @@
         async function restoreState() {
             toggleFreqOptions();
 
+            // Restore scope mode first
+            if (lastScope && lastScope !== 'zip') {
+                $('#mode_location').prop('checked', true);
+                toggleScopeMode('location');
+            } else {
+                $('#mode_zip').prop('checked', true);
+                toggleScopeMode('zip');
+            }
+
             if (lastCommunity && lastCommunity.length > 0) {
                 $('#community').val(lastCommunity).trigger('change.select2');
                 
-                const select = document.getElementById('community');
-                currentCommunities = getSelectValues(select);
-                const scopeFieldset = document.getElementById('scope_fieldset');
-                const disabledMsg = document.getElementById('scope_disabled_msg');
+                currentCommunities = getSelectValues(document.getElementById('community'));
                 
                 if (currentCommunities.length > 0 && currentCommunities[0] !== "") {
-                    scopeFieldset.disabled = false;
-                    disabledMsg.style.display = 'none';
+                    showLocationFields();
                     const isCatSelected = currentCommunities.some(c => CATALUNYA_NAMES.includes(c));
-                    
-                    if (isCatSelected) {
-                        $('#div_comarca_wrapper').show();
-                    } else {
-                        $('#div_comarca_wrapper').hide();
-                    }
 
                     await loadProvinces(currentCommunities);
                     if (lastProvinces && lastProvinces.length > 0) {
@@ -787,15 +781,6 @@
                         }
                     }
                     
-                    // Restore Scope Mode
-                    if (lastScope === 'zip') {
-                        $('#mode_zip').prop('checked', true);
-                        toggleScopeMode('zip');
-                    } else {
-                        $('#mode_location').prop('checked', true);
-                        toggleScopeMode('location');
-                    }
-
                     if (lastScope === 'municipi' || lastScope === 'comarca' || lastScope === 'provincia' || lastScope === 'all_community') {
                          await loadMunicipios();
                          if (lastMunicipis && lastMunicipis.length > 0) {
@@ -803,7 +788,6 @@
                         }
                     }
                     
-                    // Trigger update to set hidden radios
                     if (lastScope !== 'zip') {
                         updateLocationScope();
                     }
@@ -821,25 +805,28 @@
             return Array.isArray(val) ? val : [val];
         }
 
+        function showLocationFields() {
+            const isCatSelected = currentCommunities.some(c => CATALUNYA_NAMES.includes(c));
+            $('#div_provincia_wrapper').show();
+            $('#div_municipi_wrapper').show();
+            if (isCatSelected) {
+                $('#div_comarca_wrapper').show();
+            } else {
+                $('#div_comarca_wrapper').hide();
+                $('#comarca_select').val(null).trigger('change');
+            }
+        }
+
         function onCommunityChange() {
             const select = document.getElementById('community');
             currentCommunities = getSelectValues(select);
-            const scopeFieldset = document.getElementById('scope_fieldset');
-            const disabledMsg = document.getElementById('scope_disabled_msg');
             
             if (currentCommunities.length > 0 && currentCommunities[0] !== "") {
-                // Habilitar el fieldset i amagar el missatge
-                scopeFieldset.disabled = false;
-                disabledMsg.style.display = 'none';
-                
+                showLocationFields();
+
                 const isCatSelected = currentCommunities.some(c => CATALUNYA_NAMES.includes(c));
-                
                 if (isCatSelected) {
-                    $('#div_comarca_wrapper').show();
                     loadComarcas();
-                } else {
-                    $('#div_comarca_wrapper').hide();
-                    $('#comarca_select').val(null).trigger('change');
                 }
 
                 loadProvinces(currentCommunities);
@@ -848,15 +835,15 @@
                 $('#municipi_select').empty().trigger('change');
                 $('#municipi_select').prop('disabled', true);
                 
-                // Update scope
-                if ($('#mode_location').is(':checked')) {
-                    updateLocationScope();
-                }
-
+                updateLocationScope();
             } else {
-                // Deshabilitar el fieldset i mostrar el missatge
-                scopeFieldset.disabled = true;
-                disabledMsg.style.display = 'block';
+                // Hide subfields when no CA selected
+                $('#div_provincia_wrapper').hide();
+                $('#div_comarca_wrapper').hide();
+                $('#div_municipi_wrapper').hide();
+                $('#provincia_select').empty().trigger('change');
+                $('#comarca_select').empty().trigger('change');
+                $('#municipi_select').empty().trigger('change');
             }
         }
 
@@ -868,6 +855,8 @@
             } else {
                 $('#section_zip_input').hide();
                 $('#section_location_selectors').show();
+                // Trigger community change to show subfields if CA already selected
+                onCommunityChange();
                 updateLocationScope();
             }
         }
@@ -1015,12 +1004,24 @@
 
         // Validació del formulari abans d'enviar
         $('form').on('submit', function(e) {
-            var community = $('#community').val();
-            if (!community || community === '') {
-                e.preventDefault();
-                alert('Has de seleccionar una Comunitat Autònoma per continuar.');
-                $('#community').select2('open');
-                return false;
+            var isLocationMode = $('#mode_location').is(':checked');
+            if (isLocationMode) {
+                var community = $('#community').val();
+                if (!community || community === '') {
+                    e.preventDefault();
+                    alert('Has de seleccionar una Comunitat Autònoma per al mode Localitat.');
+                    $('#community').select2('open');
+                    return false;
+                }
+            } else {
+                // CP mode — check that at least one CP is entered
+                var zipVal = $('#zip_code_input').val().trim();
+                if (!zipVal) {
+                    e.preventDefault();
+                    alert('Has d\'introduir almenys un codi postal.');
+                    $('#zip_code_input').focus();
+                    return false;
+                }
             }
             // Comprovar que almenys un tipus de cita està seleccionat
             if ($('input[name="appt_type"]:checked').length === 0) {
@@ -1124,7 +1125,7 @@
                             .html('<span class="spinner-grow spinner-grow-sm" style="width:0.5rem;height:0.5rem;"></span> Reiniciant...');
                         var $td = $row.find('.restart-btn').closest('td');
                         $td.find('.d-flex').html(
-                            '<button class="btn btn-warning btn-sm action-btn" onclick="stopSearch(\'' + dni + '\')"><i class="bi bi-pause-fill"></i> Aturar</button>'
+                            '<button class="btn btn-warning btn-sm action-btn" onclick="stopSearch(\'' + dni + '\')" title="Aturar"><i class="bi bi-pause-fill"></i></button>'
                         );
                         $td.find('.finished-at').text('');
                         // Reset progress
@@ -1274,7 +1275,7 @@
                         var isSearching = status.active && !msg.includes('En pausa') && !msg.includes('Cicle completat');
                         if (isSearching) {
                             $actionTd.find('.d-flex').html(
-                                '<button class="btn btn-warning btn-sm action-btn" onclick="stopSearch(\'' + dni + '\')"><i class="bi bi-pause-fill"></i> Aturar</button>'
+                                '<button class="btn btn-warning btn-sm action-btn" onclick="stopSearch(\'' + dni + '\')" title="Aturar"><i class="bi bi-pause-fill"></i></button>'
                             );
                         } else {
                             $actionTd.find('.d-flex').html(
