@@ -65,6 +65,30 @@ Quan configuris el servei, afegeix aquestes variables:
 
 ---
 
+## 6. Configuració Actual (GCP)
+
+Tenim una VM a Google Cloud Platform:
+
+- **VM:** `sepe-bot` (e2-micro → europe-southwest1-a)
+- **IP estàtica:** `34.175.104.101`
+- **Port:** `10000`
+- **URL:** http://34.175.104.101:10000
+- **Scheduling:** Standard (no preemptible, sempre encesa)
+- **SO:** Container-Optimized OS (COS)
+- **Container:** Docker amb `--restart unless-stopped`
+
+### CI/CD Automàtic
+
+Cada push a `main` dispara GitHub Actions (`.github/workflows/deploy.yml`) que:
+1. Connecta per SSH a la VM
+2. Fa `git pull` (via `alpine/git` en Docker)
+3. Rebuilda la imatge Docker
+4. Reinicia el container
+
+Secrets necessaris a GitHub: `VM_SSH_USER`, `VM_SSH_KEY`.
+
+---
+
 ### Resum per posar-ho en marxa JA:
 Si vols la via ràpida i tens pressupost (~25€/mes):
 1. Puja aquest codi a GitHub.
