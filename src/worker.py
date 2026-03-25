@@ -292,27 +292,38 @@ def run_worker():
                         batch_zips = zips[idx:batch_end]
                         
                         # Actualitzem estat abans de llançar (perquè UI vegi que treballa)
-                        data['status_message'] = f"Cercant a {batch_zips[0]}... ({len(batch_zips)} CPs en paral·lel)"
+                        data['status_message'] = f"Cercant a {batch_zips[0]}..."
                         active_searches[dni] = data # Important actualitzar l'objecte pare
                         updates_made = True 
                         
                         for zip_to_check in batch_zips:
+                            run_id = data.get('run_id', 0)
                             future = executor.submit(check_single_zip, dni, data, zip_to_check)
-                            futures[future] = (dni, zip_to_check)
+                            futures[future] = (dni, zip_to_check, run_id)
                 
                 # Si hem fet actualitzacions d'estat (missatges "En pausa"), guardem abans de bloquejar en futures
                 if updates_made:
                     save_state(active_searches)
                     updates_made = False # Reset
 
+                # Recarreguem estat fresc del disc per capturar stop/restart/delete
+                active_searches = load_state()
+
                 # Processar resultats dels fils
                 for future in futures:
-                    dni, checked_zip = futures[future]
+                    dni, checked_zip, submitted_run_id = futures[future]
                     found, success_zip, found_type, offices_info = future.result()
                     
-                    # Recarreguem estat per si ha canviat mentrestant
                     data = active_searches.get(dni)
-                    if not data: continue # Potser s'ha esborrat
+                    if not data:
+                        continue  # Esborrat durant el processament
+
+                    # Si l'usuari ha aturat o reiniciat, ignorem resultats antics
+                    if not data.get('active'):
+                        continue
+                    if data.get('run_id', 0) != submitted_run_id:
+                        logger.info(f"Ignorant resultat antic de {checked_zip} per {dni} (cerca reiniciada)")
+                        continue
 
                     if found:
                         # !!! ÈXIT !!!
@@ -337,6 +348,7 @@ def run_worker():
                         
                     else:
                         # No trobat, avancem índex
+                        logger.info(f"    CP {checked_zip} — no trobat.")
                         data['current_zip_index'] += 1
                         updates_made = True
                         

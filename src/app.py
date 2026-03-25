@@ -244,7 +244,8 @@ def start_search():
             'last_cycle_time': 0,
             'status_message': "Iniciant...",
             'last_result_message': "Pendent de primera execució",
-            'tramite_id': tramite_id
+            'tramite_id': tramite_id,
+            'run_id': time.time()
         }
         # Guardar a state.json perquè el worker ho vegi
         save_state(active_searches)
@@ -351,6 +352,7 @@ def restart_search_api(dni):
         active_searches[dni]['finished_at'] = None
         active_searches[dni]['status_message'] = 'Reiniciant...'
         active_searches[dni]['last_cycle_time'] = 0
+        active_searches[dni]['run_id'] = time.time()
         save_state(active_searches)
         return jsonify({'status': 'ok', 'message': 'Cerca reiniciada'})
     return jsonify({'status': 'error', 'message': 'DNI no trobat'}), 404
