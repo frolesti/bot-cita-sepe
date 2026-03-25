@@ -56,7 +56,9 @@ class SepeBot:
 
         self.driver = webdriver.Chrome(service=self.service, options=options)
         self.driver.set_page_load_timeout(45) # Timeout de 45 segons per carregar pàgines
+        self.driver.set_script_timeout(30)
         self.wait = WebDriverWait(self.driver, 20)
+        self.headless = headless
 
     def check_appointment(self, zip_code, dni, appt_types=None, tramite_id=None, subtramite_id=None):
         """
@@ -180,53 +182,66 @@ class SepeBot:
             except Exception as e:
                 logging.debug(f"comboNivelServicio1 no trobat o ja seleccionat: {e}")
 
-            # 4. Seleccionar Tràmit (comboNivelServicio2)
-            try:
-                # Wait for the element to be present and visible
-                tramite_select_elem = WebDriverWait(self.driver, 10).until(EC.visibility_of_element_located((By.ID, "comboNivelServicio2")))
-                tramite_select = Select(tramite_select_elem)
-                
-                if tramite_id:
-                    tramite_select.select_by_value(tramite_id)
-                    logging.debug(f"Tràmit {tramite_id} seleccionat.")
-                else:
-                    # Default to first valid option (index 1 usually, 0 is placeholder)
-                    if len(tramite_select.options) > 1:
-                        tramite_select.select_by_index(1)
-                        logging.debug("Tràmit per defecte seleccionat.")
-                    else:
-                        logging.warning("No hi ha opcions de tràmit disponibles.")
-
-                # 5. Seleccionar Subtràmit (comboNivelServicio3) - OBLIGATORI
-                time.sleep(1)  # Wait for subtramite combo to load
+            # 4. Seleccionar Tràmit (comboNivelServicio2) — amb retry per StaleElement
+            tramite_ok = False
+            for _attempt in range(3):
                 try:
-                    subtramite_select_elem = WebDriverWait(self.driver, 5).until(
-                        EC.visibility_of_element_located((By.ID, "comboNivelServicio3"))
-                    )
-                    subtramite_select = Select(subtramite_select_elem)
-                    if subtramite_id:
-                        subtramite_select.select_by_value(subtramite_id)
-                        logging.info(f"Subtràmit {subtramite_id} seleccionat.")
-                    elif len(subtramite_select.options) > 1:
-                        # Auto-select first non-placeholder option
-                        subtramite_select.select_by_index(1)
-                        logging.info(f"Subtràmit auto-seleccionat: {subtramite_select.first_selected_option.text}")
-                    time.sleep(1)
-                except Exception as e_sub:
-                    logging.debug(f"Subtràmit (comboNivelServicio3) no requerit o no trobat: {e_sub}")
-                
-            except Exception as e:
-                logging.warning(f"No s'ha pogut seleccionar el tràmit automàticament: {e}")
+                    tramite_select_elem = WebDriverWait(self.driver, 10).until(
+                        EC.visibility_of_element_located((By.ID, "comboNivelServicio2")))
+                    time.sleep(0.5)  # Let AJAX finish populating options
+                    tramite_select = Select(tramite_select_elem)
+                    
+                    if tramite_id:
+                        tramite_select.select_by_value(tramite_id)
+                        logging.info(f"Tràmit {tramite_id} seleccionat.")
+                    else:
+                        if len(tramite_select.options) > 1:
+                            tramite_select.select_by_index(1)
+                            logging.info(f"Tràmit seleccionat: {tramite_select.first_selected_option.text}")
+                        else:
+                            logging.warning("No hi ha opcions de tràmit disponibles.")
+                    tramite_ok = True
+                    break
+                except Exception as e:
+                    if _attempt < 2:
+                        logging.info(f"Retry {_attempt+1}/3 selecció tràmit (StaleElement?)")
+                        time.sleep(2)
+                    else:
+                        logging.warning(f"No s'ha pogut seleccionar el tràmit (3 intents): {e}")
+
+            if not tramite_ok:
                 # Fallback to old method if specific IDs fail
                 try:
                     selects = self.driver.find_elements(By.TAG_NAME, "select")
                     for s in selects:
                         if s.get_attribute("id") not in ["datosCodigoPostal", "datosIdiomas", "comboNivelServicio1"] and s.is_displayed():
                             Select(s).select_by_index(1)
-                            logging.debug("Tràmit seleccionat per fallback.")
+                            logging.info("Tràmit seleccionat per fallback.")
+                            tramite_ok = True
                             break
                 except:
                     pass
+
+            if not tramite_ok:
+                logging.error("No s'ha pogut seleccionar cap tràmit. Abortant comprovació.")
+                return results
+
+            # 5. Seleccionar Subtràmit (comboNivelServicio3) si existeix
+            time.sleep(1)
+            try:
+                subtramite_select_elem = WebDriverWait(self.driver, 5).until(
+                    EC.visibility_of_element_located((By.ID, "comboNivelServicio3"))
+                )
+                subtramite_select = Select(subtramite_select_elem)
+                if subtramite_id:
+                    subtramite_select.select_by_value(subtramite_id)
+                    logging.info(f"Subtràmit {subtramite_id} seleccionat.")
+                elif len(subtramite_select.options) > 1:
+                    subtramite_select.select_by_index(1)
+                    logging.info(f"Subtràmit auto-seleccionat: {subtramite_select.first_selected_option.text}")
+                time.sleep(1)
+            except Exception as e_sub:
+                logging.debug(f"Subtràmit (comboNivelServicio3) no requerit o no trobat: {e_sub}")
 
             # Introduir DNI (MOVED AFTER TRAMITE)
             # El camp DNI (inputDNI) està ocult inicialment i apareix després de posar el CP i Tràmit
@@ -253,15 +268,16 @@ class SepeBot:
             visible_captcha_elements = [el for el in all_captcha_elements if el.is_displayed()]
             
             if len(visible_captcha_elements) > 0:
-                logging.info("⚠️  ATENCIÓ: Resol el CAPTCHA manualment al navegador o configura un servei OCR.")
-                # Si estem executant en local amb interfície gràfica:
-                # Esperem fins que l'usuari canviï de pàgina (signe que ha passat el captcha)
+                if self.headless:
+                    logging.warning("CAPTCHA detectat en mode headless — no es pot resoldre. Abortant.")
+                    self._save_debug_snapshot("captcha_headless")
+                    return results
+                
+                logging.info("⚠️  ATENCIÓ: Resol el CAPTCHA manualment al navegador.")
                 current_url = self.driver.current_url
                 logging.info("Esperant resolució manual del CAPTCHA (màxim 120s)...")
                 
                 try:
-                    # Esperem 120 segons màxim perquè l'usuari resolgui el captcha i cliqui "Aceptar"
-                    # Detectem canvi d'URL O aparició de missatges de resultat
                     WebDriverWait(self.driver, 120).until(
                         lambda d: d.current_url != current_url or \
                                   "no hay citas" in d.page_source.lower() or \
@@ -273,7 +289,7 @@ class SepeBot:
                     logging.info("S'ha detectat avançament després del CAPTCHA.")
                 except Exception as e:
                     logging.warning("Temps d'espera esgotat (120s) sense detectar canvis després del CAPTCHA.")
-                    return False
+                    return results
             else:
                 logging.debug("No s'ha detectat CAPTCHA visible. Intentant continuar automàticament...")
                 try:
@@ -317,9 +333,51 @@ class SepeBot:
                             # Fallback JS click
                             self.driver.execute_script("arguments[0].click();", submit_btn)
                             
-                        logging.debug("Botó 'Continuar' clicat.")
-                        # Esperem una mica perquè carregui la següent pàgina
-                        time.sleep(3)
+                        logging.info("Botó 'Continuar' clicat. Esperant que SEPE carregui pas 2...")
+                        # SEPE fa una cadena d'AJAX síncrons:
+                        #   validaNIE → compruebaMascaraDNI → validaDatosServicio
+                        #   → loadMensajesYPantallaMapa → showPantallaMapa
+                        # showPantallaMapa posa HTML dins #contenido2.
+                        # Si hi ha error al formulari, apareix un mensajeInfo visible.
+                        # Esperem que #contenido2 tingui contingut O que hi hagi un error visible.
+                        try:
+                            WebDriverWait(self.driver, 30).until(
+                                lambda d: (
+                                    # Pas 2 carregat (contenido2 té HTML)
+                                    len(d.execute_script(
+                                        "var el = document.getElementById('contenido2');"
+                                        "return el ? el.innerHTML.trim() : '';"
+                                    )) > 50
+                                ) or (
+                                    # Error de validació visible (mensajeInfo amb display != none)
+                                    d.execute_script(
+                                        "var msgs = document.querySelectorAll('.mensajeInfo');"
+                                        "for(var i=0;i<msgs.length;i++){"
+                                        "  if(msgs[i].style.display !== 'none' && msgs[i].textContent.trim()){"
+                                        "    return msgs[i].textContent.trim();"
+                                        "  }"
+                                        "} return '';"
+                                    ) != ''
+                                )
+                            )
+                            # Check what we got
+                            contenido2_len = self.driver.execute_script(
+                                "var el = document.getElementById('contenido2');"
+                                "return el ? el.innerHTML.trim().length : 0;")
+                            if contenido2_len > 50:
+                                logging.info(f"Pas 2 carregat (contenido2: {contenido2_len} chars)")
+                            else:
+                                error_msg = self.driver.execute_script(
+                                    "var msgs = document.querySelectorAll('.mensajeInfo');"
+                                    "for(var i=0;i<msgs.length;i++){"
+                                    "  if(msgs[i].style.display !== 'none' && msgs[i].textContent.trim()){"
+                                    "    return msgs[i].textContent.trim();"
+                                    "  }"
+                                    "} return '';"
+                                )
+                                logging.warning(f"Error de validació SEPE: {error_msg}")
+                        except:
+                            logging.warning("Timeout 30s esperant pas 2 del SEPE.")
                     else:
                         logging.warning("No s'ha trobat el botó de continuar, però tampoc hi ha captcha.")
                         # Debug HTML per veure per què no troba el botó
@@ -329,18 +387,17 @@ class SepeBot:
                     logging.error(f"Error intentant clicar continuar: {e}")
 
             # 6. Comprovar disponibilitat
-            logging.debug("Analitzant resultat de la cerca...")
-            time.sleep(2) # Esperem càrrega
+            logging.info("Analitzant resultat de la cerca...")
             
             # 6b. GESTIÓ DEL CANAL: comprovar cada tipus de cita sol·licitat
-            channel_select_elem = self._find_channel_selector()
+            channel_select_elem = self._find_channel_selector(timeout=12)
             
             if channel_select_elem:
                 # Hi ha selector de canal — comprovem cada tipus
                 for i, appt_type in enumerate(appt_types):
                     if i > 0:
                         # Re-buscar el selector per si la pàgina ha canviat
-                        channel_select_elem = self._find_channel_selector()
+                        channel_select_elem = self._find_channel_selector(timeout=5)
                         if not channel_select_elem:
                             logging.warning("No s'ha pogut re-trobar el selector de canal per al següent tipus.")
                             break
@@ -359,9 +416,9 @@ class SepeBot:
                                                      "en estos momentos no podemos",
                                                      "no existen huecos"])
                         )
-                        logging.debug("Contingut detectat després de selecció de canal.")
+                        logging.info("Contingut detectat després de selecció de canal.")
                     except:
-                        logging.debug("Timeout esperant contingut després de selecció de canal (12s).")
+                        logging.warning("Timeout esperant contingut després de selecció de canal (15s).")
                     
                     found = self._check_page_result(zip_code, dni)
                     results[appt_type] = found
@@ -388,33 +445,56 @@ class SepeBot:
             logging.error(f"Error durant la comprovació: {e}")
             return results
 
-    def _find_channel_selector(self):
-        """Busca el selector de canal (presencial/telefònica) a la pàgina."""
-        try:
-            channel_selects = self.driver.find_elements(By.TAG_NAME, "select")
-            
-            # Buscar per nom/id amb 'canal'
-            for s in channel_selects:
-                try:
-                    if s.is_displayed() and (
-                        'canal' in (s.get_attribute('name') or '').lower() or 
-                        'canal' in (s.get_attribute('id') or '').lower()
-                    ):
-                        return s
-                except:
-                    continue
-            
-            # Fallback: si la pàgina conté "seleccione/seleccioneu el canal", agafar el primer select visible
-            page_lower = self.driver.page_source.lower()
-            if "seleccione el canal" in page_lower or "seleccioneu el canal" in page_lower:
+    def _find_channel_selector(self, timeout=12):
+        """Busca el selector de canal amb polling fins que aparegui o timeout."""
+        end_time = time.time() + timeout
+        while time.time() < end_time:
+            try:
+                channel_selects = self.driver.find_elements(By.TAG_NAME, "select")
+                
+                # Buscar per nom/id amb 'canal'
                 for s in channel_selects:
                     try:
-                        if s.is_displayed():
+                        if s.is_displayed() and (
+                            'canal' in (s.get_attribute('name') or '').lower() or 
+                            'canal' in (s.get_attribute('id') or '').lower()
+                        ):
+                            logging.info("Selector de canal trobat.")
                             return s
                     except:
                         continue
-        except Exception as e:
-            logging.debug(f"Error buscant selector de canal: {e}")
+                
+                # Fallback: text-based
+                page_lower = self.driver.page_source.lower()
+                if "seleccione el canal" in page_lower or "seleccioneu el canal" in page_lower:
+                    for s in channel_selects:
+                        try:
+                            if s.is_displayed():
+                                logging.info("Selector de canal trobat (per text).")
+                                return s
+                        except:
+                            continue
+                
+                # If page already shows result/error, don't wait more
+                body_lower = self.driver.find_element(By.TAG_NAME, "body").text.lower()
+                early_exit_kws = [
+                    "no podemos ofrecerle", "no podem oferir",
+                    "no hay citas", "no hi ha cites",
+                    "no existen gestiones", "no existeixen gestions",
+                    "campos obligatorios", "camps obligatoris",
+                    "primer hueco", "primer buit",
+                    "seleccione la oficina", "seleccioneu l'oficina",
+                ]
+                if any(kw in body_lower for kw in early_exit_kws):
+                    logging.info("No hi ha selector de canal; pàgina ja té resultat.")
+                    return None
+                
+                time.sleep(1)
+            except Exception as e:
+                logging.debug(f"Error buscant selector de canal: {e}")
+                time.sleep(1)
+        
+        logging.warning(f"Timeout {timeout}s buscant selector de canal.")
         return None
 
     def _select_channel(self, channel_select_elem, appt_type):
