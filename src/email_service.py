@@ -7,9 +7,13 @@ import logging
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.utils import formataddr
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
+
+# Display name configurable via .env (per defecte "Bot Cita SEPE")
+_FROM_NAME = os.getenv('MAIL_FROM_NAME', 'Bot Cita SEPE')
 
 
 def send_email(to_email, subject, body_html):
@@ -25,8 +29,9 @@ def send_email(to_email, subject, body_html):
 
     try:
         msg = MIMEMultipart('alternative')
-        msg['From'] = sender_email
+        msg['From'] = formataddr((_FROM_NAME, sender_email))
         msg['To'] = to_email
+        msg['Reply-To'] = formataddr((_FROM_NAME, sender_email))
         msg['Subject'] = subject
         msg.attach(MIMEText(body_html, 'html', 'utf-8'))
 
@@ -48,8 +53,9 @@ def send_test_email(to_email):
         raise ValueError("Credencials de correu no configurades al servidor (.env)")
 
     msg = MIMEMultipart()
-    msg['From'] = sender_email
+    msg['From'] = formataddr((_FROM_NAME, sender_email))
     msg['To'] = to_email
+    msg['Reply-To'] = formataddr((_FROM_NAME, sender_email))
     msg['Subject'] = '[BOT CITA SEPE] Correu de prova'
     body = """Hola!
 
