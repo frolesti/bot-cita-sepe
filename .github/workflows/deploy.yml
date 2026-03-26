@@ -46,8 +46,10 @@ jobs:
             echo ">> Restarting container..."
             docker stop "$CONTAINER_NAME" 2>/dev/null || true
             docker rm "$CONTAINER_NAME" 2>/dev/null || true
+            docker network create caddy-net 2>/dev/null || true
             docker run -d \
               --name "$CONTAINER_NAME" \
+              --network caddy-net \
               -p 10000:10000 \
               --env-file "$REPO_DIR/.env" \
               --restart unless-stopped \
