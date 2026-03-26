@@ -254,18 +254,6 @@ def list_debug_snapshots():
         'png_files': [os.path.basename(f) for f in pngs],
     })
 
-@app.route('/api/test-email', methods=['POST'])
-def test_email():
-    to_email = request.json.get('email') if request.is_json else request.form.get('email')
-    if not to_email:
-        return jsonify({'status': 'error', 'message': 'Cal un email destinatari'}), 400
-    try:
-        email_service.send_test_email(to_email)
-        return jsonify({'status': 'ok', 'message': f'Correu enviat a {to_email}'})
-    except Exception as e:
-        logger.error(f"Error enviant correu de prova: {e}")
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
 
 if __name__ == '__main__':
     app.run(debug=True)

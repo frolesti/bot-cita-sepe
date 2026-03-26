@@ -315,7 +315,6 @@
             font-size: 0.85rem;
             color: #1e40af;
         }
-        .test-email-result { font-size: 0.82rem; margin-top: 4px; }
         @media (max-width: 768px) {
             .container { padding: 0 0.75rem; }
             .btn { font-size: 0.82rem !important; }
@@ -363,14 +362,8 @@
                     </div>
                     <div class="col-md-6 mb-3">
                         <label for="email" class="form-label">Email per notificar</label>
-                        <div class="input-group">
-                            <input type="email" class="form-control" id="email" name="email" required placeholder="el_teu@email.com" value="{{ last_email }}">
-                            <button type="button" class="btn btn-outline-primary btn-sm" onclick="testEmail()" title="Enviar correu de prova" style="letter-spacing:0; font-size:0.9rem !important;">
-                                <i class="bi bi-envelope-check"></i> Test
-                            </button>
-                        </div>
+                        <input type="email" class="form-control" id="email" name="email" required placeholder="el_teu@email.com" value="{{ last_email }}">
                         <div class="form-text text-primary"><i class="bi bi-envelope-exclamation"></i> T'enviarem un mail aquí quan trobem cita.</div>
-                        <div id="testEmailResult" style="display:none; font-size:0.85rem; margin-top:4px;"></div>
                     </div>
                 </div>
 
@@ -1059,40 +1052,6 @@
         }
 
         // --- Stop / Delete actions ---
-        function testEmail() {
-            var email = document.getElementById('email').value.trim();
-            var resultDiv = document.getElementById('testEmailResult');
-            if (!email) {
-                resultDiv.style.display = 'block';
-                resultDiv.style.color = 'var(--amber)';
-                resultDiv.textContent = '> Introdueix un email primer.';
-                return;
-            }
-            resultDiv.style.display = 'block';
-            resultDiv.style.color = 'var(--green-dim)';
-            resultDiv.textContent = '> Enviant correu de prova...';
-            
-            fetch('/api/test-email', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({email: email})
-            })
-            .then(r => r.json())
-            .then(data => {
-                if (data.status === 'ok') {
-                    resultDiv.style.color = 'var(--green)';
-                    resultDiv.textContent = '> OK: ' + data.message;
-                } else {
-                    resultDiv.style.color = 'var(--red)';
-                    resultDiv.textContent = '> ERROR: ' + data.message;
-                }
-            })
-            .catch(err => {
-                resultDiv.style.color = 'var(--red)';
-                resultDiv.textContent = '> ERROR: ' + err;
-            });
-        }
-
         function stopSearch(dni) {
             fetch('/api/stop/' + dni, { method: 'POST' })
                 .then(r => r.json())

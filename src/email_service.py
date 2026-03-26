@@ -44,36 +44,6 @@ def send_email(to_email, subject, body_html):
         logger.error(f"Error enviant correu: {e}")
 
 
-def send_test_email(to_email):
-    """Envia un correu de prova per verificar la configuració."""
-    sender_email = os.getenv('MAIL_USERNAME')
-    sender_password = os.getenv('MAIL_PASSWORD')
-
-    if not sender_email or not sender_password:
-        raise ValueError("Credencials de correu no configurades al servidor (.env)")
-
-    msg = MIMEMultipart()
-    msg['From'] = formataddr((_FROM_NAME, sender_email))
-    msg['To'] = to_email
-    msg['Reply-To'] = 'noreply@cita-sepe.duckdns.org'
-    msg['Subject'] = '[BOT CITA SEPE] Correu de prova'
-    body = """Hola!
-
-Aquest és un correu de prova enviat des del Bot Cita SEPE.
-Si reps aquest missatge, la configuració d'enviament de correus és correcta.
-
-Quan el bot trobi una cita disponible, rebràs una notificació similar a aquesta.
-
-— Bot Cita SEPE"""
-    msg.attach(MIMEText(body, 'plain'))
-
-    with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
-        server.login(sender_email, sender_password)
-        server.send_message(msg)
-
-    logger.info(f"Correu de prova enviat correctament a {to_email}")
-
-
 def build_appointment_email(dni, success_zip, type_name, types_str, scope_name, offices_info):
     """Genera un email HTML estilitzat similar a la pàgina de resultats del SEPE."""
     now_str = datetime.now().strftime('%d/%m/%Y %H:%M')
