@@ -31,7 +31,7 @@ def send_email(to_email, subject, body_html):
         msg = MIMEMultipart('alternative')
         msg['From'] = formataddr((_FROM_NAME, sender_email))
         msg['To'] = to_email
-        msg['Reply-To'] = 'noreply@cita-sepe.duckdns.org'
+        msg['Reply-To'] = formataddr(('No Reply', sender_email))
         msg['Subject'] = subject
         msg.attach(MIMEText(body_html, 'html', 'utf-8'))
 
