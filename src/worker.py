@@ -12,6 +12,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from src.sepe_bot import SepeBot
 from src.state import load_state, save_state
 from src.email_service import send_email, build_appointment_email
+from src.search_service import MAX_RECURRENCE_HOURS
 
 # Configurar logging — stdout + fitxer rotatiu perquè /api/logs pugui llegir-lo
 LOG_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'worker.log')
@@ -113,8 +114,19 @@ def run_worker():
                     if not data.get('active', False) or not data.get('zips'):
                         continue
 
-                    # --- GESTIÓ DE FREQÜÈNCIA (Lògica Temporal) ---
+                    # --- LÍMIT DE RECURRÈNCIA ---
                     freq_type = data.get('freq_type', 'once')
+                    if freq_type != 'once':
+                        created_at = data.get('created_at', 0)
+                        if created_at and (time.time() - created_at) > MAX_RECURRENCE_HOURS * 3600:
+                            data['active'] = False
+                            data['status_message'] = f"Expirada (màxim {MAX_RECURRENCE_HOURS}h de recurrència)"
+                            data['finished_at'] = datetime.now().strftime('%d/%m/%Y %H:%M')
+                            updates_made = True
+                            logger.info(f"Cerca {dni} expirada per límit de recurrència ({MAX_RECURRENCE_HOURS}h)")
+                            continue
+
+                    # --- GESTIÓ DE FREQÜÈNCIA (Lògica Temporal) ---
                     last_complete = data.get('last_cycle_time', 0)
                     now = time.time()
                     
@@ -213,11 +225,10 @@ def run_worker():
                     if found:
                         # !!! ÈXIT !!!
                         type_name = 'Presencial' if found_type == 'person' else 'Telefònica'
-                        data['active'] = False
-                        data['finished_at'] = datetime.now().strftime('%d/%m/%Y %H:%M')
+                        now_str = datetime.now().strftime('%d/%m %H:%M')
                         data['status_message'] = f"ÈXIT! Cita {type_name} a {success_zip}"
-                        data['last_result_message'] = f"CITA {type_name} DISPONIBLE DETECTADA EL {datetime.now().strftime('%d/%m %H:%M')}"
-                        data['last_cycle_time'] = time.time() # Marquem com acabat
+                        data['last_result_message'] = f"CITA {type_name} DISPONIBLE DETECTADA EL {now_str}"
+                        data['last_cycle_time'] = time.time()
                         
                         # Determinar tipus de cita per al correu
                         appt_types = data.get('appt_types', [data.get('type', 'person')])
@@ -229,6 +240,18 @@ def run_worker():
                             data.get('scope_name', ''), offices_info
                         )
                         send_email(data.get('email'), f"\U00002705 CITA SEPE TROBADA! ({type_name} a {success_zip})", email_html)
+                        
+                        # Cerques recurrents: continuem buscant
+                        freq_type = data.get('freq_type', 'once')
+                        if freq_type == 'once':
+                            data['active'] = False
+                            data['finished_at'] = datetime.now().strftime('%d/%m/%Y %H:%M')
+                        else:
+                            # Reset cicle per al següent interval
+                            data['current_zip_index'] = 0
+                            data['cycle_start_time'] = None
+                            data['status_message'] += f" | Següent cicle en espera"
+                            logger.info(f"Cerca recurrent {dni}: èxit trobat, continuant al pròxim cicle")
                         updates_made = True
                         
                     else:

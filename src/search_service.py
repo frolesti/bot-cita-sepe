@@ -3,19 +3,19 @@ Servei de gestió de cerques.
 Conté tota la lògica de negoci: crear, aturar, reiniciar, eliminar cerques
 i consultar el seu estat. És independent de Flask (no coneix request/session).
 """
+import os
 import time
 import random
 import logging
 from datetime import datetime, timedelta
 
-try:
-    from zoneinfo import ZoneInfo
-except ImportError:
-    class ZoneInfo:
-        def __init__(self, key): pass
-
 from src.state import load_state, save_state
 from src.locations import LocationManager
+
+# Límit màxim de recurrència (en hores). Si una cerca recurrent porta
+# més d'aquest temps activa, s'atura automàticament perquè l'usuari
+# no se n'oblidi.
+MAX_RECURRENCE_HOURS = int(os.getenv('MAX_RECURRENCE_HOURS', 24))
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +116,7 @@ def create_search(dni, email, appt_types, scope, value, extra_context,
         'tramite_id': tramite_id,
         'run_id': time.time(),
         'owner_id': owner_id,
+        'created_at': time.time(),
     }
     save_state(all_searches)
 
@@ -245,11 +246,7 @@ def get_server_info():
 
 def _calc_next_run(freq_type, last_complete, data):
     """Calcula la pròxima execució per a la UI."""
-    try:
-        tz_madrid = ZoneInfo("Europe/Madrid")
-        now = datetime.now(tz_madrid)
-    except Exception:
-        now = datetime.utcnow() + timedelta(hours=1)
+    now = datetime.now()  # TZ=Europe/Madrid via Dockerfile ENV
 
     next_dt = None
 
@@ -262,8 +259,6 @@ def _calc_next_run(freq_type, last_complete, data):
         try:
             target_time = datetime.strptime(daily_time_str, '%H:%M').time()
             today_target = datetime.combine(now.date(), target_time)
-            if now.tzinfo:
-                today_target = today_target.replace(tzinfo=now.tzinfo)
             next_dt = today_target + timedelta(days=1) if now > today_target else today_target
         except Exception:
             pass
