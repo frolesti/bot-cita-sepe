@@ -517,7 +517,8 @@
             <div class="d-flex justify-content-between align-items-center mb-2">
                 <h3 class="mb-0">Cerques Actives<span class="cursor"></span></h3>
                 <!-- Server Load Indicator -->
-                <div id="server-load-widget" class="d-flex align-items-center gap-2" style="font-size:0.82rem;">
+                <div id="server-load-widget" class="d-flex align-items-center gap-2" style="font-size:0.82rem; cursor:help;"
+                     title="Indica la càrrega actual del servidor. Quan és alta, les cerques poden trigar més. Si arriba al 100%, no es podran crear noves cerques fins que n'acabin d'altres.">
                     <div class="d-flex align-items-center gap-1">
                         <span id="load-icon" style="font-size:0.7rem;">&#9679;</span>
                         <span id="load-label" class="text-muted">Servidor</span>
@@ -1261,6 +1262,25 @@
                                 badgeCell.addClass('bg-warning text-dark').text(msg);
                             } else {
                                 badgeCell.addClass('bg-secondary').text(msg || 'Aturat');
+                            }
+                        }
+
+                        // --- Show last_success if exists ---
+                        var $successTag = $row.find('.last-success-tag');
+                        if (status.last_success) {
+                            if ($successTag.length === 0) {
+                                badgeCell.after('<div class="last-success-tag" style="margin-top:4px;"><span class="badge bg-success" style="font-size:0.72rem;"><i class="bi bi-check-circle-fill"></i> ' + status.last_success + '</span></div>');
+                            } else {
+                                $successTag.html('<span class="badge bg-success" style="font-size:0.72rem;"><i class="bi bi-check-circle-fill"></i> ' + status.last_success + '</span>');
+                            }
+                            // Show cancel recommendation for recurring searches
+                            var $cancelAdvice = $row.find('.cancel-advice');
+                            if (status.active && status.freq_type !== 'once' && $cancelAdvice.length === 0) {
+                                $successTag.after(
+                                    '<div class="cancel-advice alert alert-success py-1 px-2 mt-2 mb-0" style="font-size:0.78rem;">' +
+                                    '<i class="bi bi-lightbulb"></i> <strong>Cita trobada!</strong> Si ja has reservat, considera esborrar aquesta cerca per alliberar recursos del servidor.' +
+                                    '</div>'
+                                );
                             }
                         }
 

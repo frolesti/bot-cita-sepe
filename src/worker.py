@@ -234,7 +234,8 @@ def run_worker():
                         # Enviar Email HTML estilitzat
                         email_html = build_appointment_email(
                             dni, success_zip, type_name, types_str,
-                            data.get('scope_name', ''), offices_info
+                            data.get('scope_name', ''), offices_info,
+                            freq_type=data.get('freq_type', 'once')
                         )
                         send_email(data.get('email'), f"\U00002705 CITA SEPE TROBADA! ({type_name} a {success_zip})", email_html)
                         
