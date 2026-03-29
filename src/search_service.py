@@ -248,9 +248,37 @@ def get_status_for_owner(owner_id):
 def get_server_info():
     """Retorna informació global del servidor (sense dades privades)."""
     all_searches = load_state()
+    active = [d for d in all_searches.values() if d.get('active', False)]
+    total_active = len(active)
+
+    # Cerques que estan realment executant-se (no en pausa)
+    running = sum(1 for d in active
+                  if 'En pausa' not in (d.get('status_message') or '')
+                  and 'Cicle completat' not in (d.get('status_message') or '')
+                  and 'Iniciant' not in (d.get('status_message') or ''))
+
+    # Capacitat
+    max_concurrent = int(os.getenv('MAX_CONCURRENT_SEARCHES', 10))
+    load_pct = round((total_active / max_concurrent) * 100) if max_concurrent else 0
+
+    # Nivell de càrrega
+    if load_pct >= 90:
+        level = 'critical'
+    elif load_pct >= 70:
+        level = 'high'
+    elif load_pct >= 40:
+        level = 'moderate'
+    else:
+        level = 'low'
+
     return {
-        'active_searches': sum(1 for d in all_searches.values() if d.get('active', False)),
+        'active_searches': total_active,
+        'running_now': running,
+        'paused': total_active - running,
         'total_searches': len(all_searches),
+        'max_concurrent': max_concurrent,
+        'load_pct': min(load_pct, 100),
+        'level': level,
     }
 
 

@@ -514,7 +514,30 @@
         </div>
 
         <div class="card p-3 mb-4" id="active_searches_section">
-            <h3>Cerques Actives<span class="cursor"></span></h3>
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h3 class="mb-0">Cerques Actives<span class="cursor"></span></h3>
+                <!-- Server Load Indicator -->
+                <div id="server-load-widget" class="d-flex align-items-center gap-2" style="font-size:0.82rem;">
+                    <div class="d-flex align-items-center gap-1">
+                        <span id="load-icon" style="font-size:0.7rem;">&#9679;</span>
+                        <span id="load-label" class="text-muted">Servidor</span>
+                    </div>
+                    <div style="width: 80px; height: 8px; background: var(--gray-200); border-radius: 100px; overflow: hidden;">
+                        <div id="load-bar" style="width: 0%; height: 100%; border-radius: 100px; transition: width 0.6s ease, background 0.3s ease;"></div>
+                    </div>
+                    <span id="load-pct" class="fw-bold" style="min-width: 32px; text-align:right;">0%</span>
+                </div>
+            </div>
+
+            <!-- Capacity Alert (hidden by default) -->
+            <div id="capacity-alert" class="alert mb-3 py-2 px-3" style="display:none; font-size:0.85rem;" role="alert">
+                <div class="d-flex align-items-center gap-2">
+                    <i id="capacity-icon" class="bi"></i>
+                    <span id="capacity-msg"></span>
+                </div>
+                <div id="capacity-detail" class="text-muted mt-1" style="font-size:0.78rem;"></div>
+            </div>
+
             {% with messages = get_flashed_messages() %}
                 {% if messages %}
                     {% for message in messages %}
@@ -1351,6 +1374,102 @@
             statusInterval = setInterval(updateSearchStatus, 2000);
             updateSearchStatus();
         }
+
+        // ═══════════════════════════════════════════════
+        // SERVER LOAD MONITOR
+        // ═══════════════════════════════════════════════
+        var serverHealth = { level: 'low', load_pct: 0, active_searches: 0, max_concurrent: 10 };
+
+        function updateServerHealth() {
+            fetch('/api/server-info')
+                .then(r => r.json())
+                .then(data => {
+                    serverHealth = data;
+                    renderLoadWidget(data);
+                    renderCapacityAlert(data);
+                    updateFormCapacity(data);
+                })
+                .catch(() => {});
+        }
+
+        function renderLoadWidget(d) {
+            var pct = d.load_pct || 0;
+            var level = d.level || 'low';
+            var colors = {
+                low:      { bar: '#16a34a', icon: '#16a34a' },
+                moderate: { bar: '#f59e0b', icon: '#f59e0b' },
+                high:     { bar: '#ea580c', icon: '#ea580c' },
+                critical: { bar: '#dc2626', icon: '#dc2626' }
+            };
+            var c = colors[level] || colors.low;
+
+            $('#load-bar').css({ width: pct + '%', background: c.bar });
+            $('#load-pct').text(pct + '%').css('color', c.icon);
+            $('#load-icon').css('color', c.icon);
+
+            var labels = { low: 'Servidor', moderate: 'Càrrega moderada', high: 'Càrrega alta', critical: 'Servidor saturat' };
+            $('#load-label').text(labels[level] || 'Servidor');
+        }
+
+        function renderCapacityAlert(d) {
+            var $alert = $('#capacity-alert');
+            var $icon = $('#capacity-icon');
+            var $msg = $('#capacity-msg');
+            var $detail = $('#capacity-detail');
+
+            if (d.level === 'critical') {
+                $alert.show()
+                    .removeClass('alert-warning alert-info')
+                    .addClass('alert-danger');
+                $icon.attr('class', 'bi bi-exclamation-triangle-fill');
+                $msg.html('<strong>Servidor al límit!</strong> Totes les places estan ocupades.');
+                $detail.text(d.active_searches + ' de ' + d.max_concurrent + ' cerques actives. Espera que n\'acabi alguna o torna més tard.');
+            } else if (d.level === 'high') {
+                $alert.show()
+                    .removeClass('alert-danger alert-info')
+                    .addClass('alert-warning');
+                $icon.attr('class', 'bi bi-exclamation-circle');
+                $msg.html('<strong>Càrrega alta.</strong> Queden poques places disponibles.');
+                var remaining = d.max_concurrent - d.active_searches;
+                $detail.text(d.active_searches + ' de ' + d.max_concurrent + ' cerques actives — ' + remaining + ' disponibles.');
+            } else if (d.level === 'moderate') {
+                $alert.show()
+                    .removeClass('alert-danger alert-warning')
+                    .addClass('alert-info');
+                $icon.attr('class', 'bi bi-info-circle');
+                var remaining = d.max_concurrent - d.active_searches;
+                $msg.html('Servidor funcionant amb normalitat.');
+                $detail.text(d.active_searches + ' de ' + d.max_concurrent + ' cerques actives — ' + remaining + ' disponibles.');
+            } else {
+                $alert.hide();
+            }
+        }
+
+        function updateFormCapacity(d) {
+            var $btn = $('#submitBtn');
+            var $block = $('#capacityBlockMsg');
+
+            if (d.load_pct >= 100) {
+                // Server full — block form
+                if ($block.length === 0) {
+                    $btn.after('<div id="capacityBlockMsg" class="text-center text-danger mt-2" style="font-size:0.85rem;">' +
+                        '<i class="bi bi-exclamation-octagon"></i> Servidor ple — no es poden crear noves cerques ara mateix.</div>');
+                }
+                $btn.prop('disabled', true).text('Servidor ple').removeClass('btn-primary').addClass('btn-secondary');
+            } else {
+                // Server has capacity
+                $('#capacityBlockMsg').remove();
+                // Only re-enable if not blocked by DNI check
+                var dniBlocked = $('#submitBlockedMsg').is(':visible');
+                if (!dniBlocked) {
+                    $btn.prop('disabled', false).text('Iniciar Monitoratge').removeClass('btn-secondary').addClass('btn-primary');
+                }
+            }
+        }
+
+        // Poll server health every 10s (lighter than status poll)
+        updateServerHealth();
+        setInterval(updateServerHealth, 10000);
     </script>
 </body>
 </html>
