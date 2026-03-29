@@ -24,6 +24,30 @@ jobs:
 
             echo "=== DEPLOY START $(date) ==="
 
+            # Pre-deploy diagnostics
+            echo ">> Disk BEFORE cleanup:"
+            df -h / | tail -1
+            echo ">> Docker disk BEFORE cleanup:"
+            docker system df 2>/dev/null || true
+            echo ">> Running containers:"
+            docker ps --format "{{.Names}} {{.Status}}" 2>/dev/null || true
+            echo ">> All containers:"
+            docker ps -a --format "{{.Names}} {{.Status}}" 2>/dev/null || true
+            echo ">> Memory BEFORE:"
+            free -m 2>/dev/null || cat /proc/meminfo | head -5
+
+            # Stop old app container
+            echo ">> Stopping old container..."
+            docker stop "$CONTAINER_NAME" 2>/dev/null || true
+            docker rm "$CONTAINER_NAME" 2>/dev/null || true
+
+            # Aggressive cleanup: remove ALL unused images, containers, volumes, networks
+            echo ">> Aggressive Docker cleanup..."
+            docker system prune -a -f --volumes 2>/dev/null || true
+
+            echo ">> Disk AFTER cleanup:"
+            df -h / | tail -1
+
             # Pull latest code (COS has no git, use alpine/git)
             if [ -d "$REPO_DIR/.git" ]; then
               echo ">> Pulling latest changes..."
@@ -36,30 +60,19 @@ jobs:
 
             # Ensure .env is readable
             sudo chmod 644 "$REPO_DIR/.env" 2>/dev/null || true
+            echo ">> .env content (keys only):"
+            grep -oP '^[A-Z_]+' "$REPO_DIR/.env" 2>/dev/null || echo "(no .env or empty)"
 
             # Build new image
             echo ">> Building Docker image..."
             cd "$REPO_DIR"
             docker build -t "$IMAGE_NAME" .
 
-            # Clean up old images/containers to free disk space
-            echo ">> Cleaning up old Docker resources..."
-            docker image prune -f
-            docker container prune -f
-            docker builder prune -f 2>/dev/null || true
-
-            # Restart container
-            echo ">> Restarting container..."
-            docker stop "$CONTAINER_NAME" 2>/dev/null || true
-            docker rm "$CONTAINER_NAME" 2>/dev/null || true
+            # Ensure caddy-net exists
             docker network create caddy-net 2>/dev/null || true
 
-            # Disk usage diagnostic
-            echo ">> Disk usage:"
-            df -h / | tail -1
-            echo ">> Docker disk usage:"
-            docker system df 2>/dev/null || true
-
+            # Start new container
+            echo ">> Starting container..."
             docker run -d \
               --name "$CONTAINER_NAME" \
               --network caddy-net \
@@ -68,42 +81,54 @@ jobs:
               --restart unless-stopped \
               "$IMAGE_NAME"
 
-            # System diagnostics
-            echo ">> Memory:"
+            echo ">> Memory AFTER start:"
             free -m 2>/dev/null || cat /proc/meminfo | head -5
-            echo ">> OOM events (last 10):"
-            dmesg 2>/dev/null | grep -i "oom\|killed" | tail -10 || true
+            echo ">> OOM events (last 20):"
+            dmesg 2>/dev/null | grep -i "oom\|killed\|memory" | tail -20 || true
 
-            sleep 4
+            # Check container status after 5s
+            sleep 5
             if docker ps | grep -q "$CONTAINER_NAME"; then
-              echo ">> Container running OK after 4s"
+              echo ">> Container running after 5s - OK"
             else
-              echo ">> ERROR: Container not running after 4s!"
-              docker logs "$CONTAINER_NAME" --tail 50
+              echo ">> ERROR: Container NOT running after 5s!"
+              echo ">> Container inspect:"
+              docker inspect "$CONTAINER_NAME" --format='Status={{.State.Status}} Exit={{.State.ExitCode}} OOM={{.State.OOMKilled}} Restarts={{.RestartCount}}' 2>/dev/null || true
+              docker logs "$CONTAINER_NAME" --tail 80
               exit 1
             fi
 
-            # Wait longer and check again (catch delayed crashes)
+            # Check again after 20s total (catch delayed crashes)
             sleep 15
             if docker ps | grep -q "$CONTAINER_NAME"; then
-              echo ">> Container still running after 19s - GOOD"
-              docker logs "$CONTAINER_NAME" --tail 30
+              echo ">> Container still running after 20s - GOOD"
             else
               echo ">> ERROR: Container CRASHED after initial start!"
-              echo ">> Container inspect:"
-              docker inspect "$CONTAINER_NAME" --format='{{.State.Status}} ExitCode={{.State.ExitCode}} OOMKilled={{.State.OOMKilled}} RestartCount={{.RestartCount}}' 2>/dev/null || true
-              echo ">> Full container logs:"
+              docker inspect "$CONTAINER_NAME" --format='Status={{.State.Status}} Exit={{.State.ExitCode}} OOM={{.State.OOMKilled}} Restarts={{.RestartCount}}' 2>/dev/null || true
               docker logs "$CONTAINER_NAME" --tail 100
-              # Try to restart it
-              echo ">> Attempting restart..."
-              docker start "$CONTAINER_NAME"
-              sleep 5
-              docker logs "$CONTAINER_NAME" --tail 30
               exit 1
             fi
 
-            # Also make sure Caddy can reach the container
-            echo ">> Testing local connectivity:"
-            docker exec "$CONTAINER_NAME" curl -sf http://localhost:10000/api/server-info || echo ">> WARNING: internal health check failed"
+            # Internal health check
+            echo ">> Internal health check:"
+            docker exec "$CONTAINER_NAME" curl -sf http://localhost:10000/api/server-info && echo " OK" || echo " FAILED"
+
+            # Final container logs
+            echo ">> Container logs:"
+            docker logs "$CONTAINER_NAME" --tail 40
+
+            # Check Caddy is running too
+            echo ">> Caddy container:"
+            CADDY_NAME=$(docker ps -a --filter "name=caddy" --format "{{.Names}}" | head -1)
+            if [ -n "$CADDY_NAME" ]; then
+              if docker ps --filter "name=$CADDY_NAME" --filter "status=running" -q | grep -q .; then
+                echo ">> Caddy is running: $CADDY_NAME"
+              else
+                echo ">> WARNING: Caddy container exists but not running, restarting..."
+                docker start "$CADDY_NAME" 2>/dev/null || echo ">> Could not start Caddy"
+              fi
+            else
+              echo ">> WARNING: No Caddy container found!"
+            fi
 
             echo "=== DEPLOY OK $(date) ==="
