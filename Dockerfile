@@ -29,5 +29,9 @@ RUN mkdir -p data
 # Expose the port
 EXPOSE 10000
 
+# Healthcheck: reinicia el container si gunicorn cau
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+  CMD curl -f http://localhost:10000/api/server-info || exit 1
+
 # Start supervisor which will manage both Web and Worker
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
