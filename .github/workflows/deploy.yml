@@ -16,47 +16,45 @@ jobs:
           key: ${{ secrets.VM_SSH_KEY }}
           command_timeout: 10m
           script: |
-            echo "=== DIAGNOSTIC RUN $(date) ==="
+            echo "=== DIAGNOSTIC + FIX RUN $(date) ==="
 
             echo "=== ALL CONTAINERS ==="
             docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Image}}"
 
-            echo "=== DOCKER NETWORKS ==="
+            echo "=== NETWORKS ==="
             docker network ls
-            echo "=== caddy-net inspect ==="
-            docker network inspect caddy-net 2>/dev/null | head -60 || echo "caddy-net not found"
-
-            echo "=== DISK ==="
-            df -h / | tail -1
-
-            echo "=== MEMORY ==="
-            free -m 2>/dev/null || cat /proc/meminfo | head -5
-
-            echo "=== APP CONTAINER LOGS (last 50) ==="
-            docker logs sepe-bot-container --tail 50 2>&1 || echo "No sepe-bot-container"
+            echo "=== caddy-net containers ==="
+            docker network inspect caddy-net --format='{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null || echo "caddy-net NOT FOUND"
 
             echo "=== APP INTERNAL TEST ==="
             docker exec sepe-bot-container curl -sf http://localhost:10000/api/server-info 2>&1 || echo "INTERNAL CHECK FAILED"
 
-            echo "=== CADDY CONTAINER LOGS (last 30) ==="
+            echo "=== CADDY DIAGNOSTICS ==="
             CADDY=$(docker ps -a --format "{{.Names}}" | grep -i caddy | head -1)
+            echo "Caddy container name: '$CADDY'"
             if [ -n "$CADDY" ]; then
-              echo "Caddy container: $CADDY"
-              docker logs "$CADDY" --tail 30 2>&1
-              echo "=== CADDY CONFIG ==="
-              docker exec "$CADDY" cat /etc/caddy/Caddyfile 2>/dev/null || echo "No Caddyfile found"
-              docker exec "$CADDY" caddy list-modules 2>/dev/null | head -5 || true
-              echo "=== CURL FROM CADDY TO APP ==="
-              docker exec "$CADDY" wget -q -O- http://sepe-bot-container:10000/api/server-info 2>&1 || echo "wget from caddy FAILED"
-              docker exec "$CADDY" curl -sf http://sepe-bot-container:10000/api/server-info 2>&1 || echo "curl from caddy FAILED"
-            else
-              echo "NO CADDY CONTAINER FOUND"
+              echo "=== Caddy logs (last 20) ==="
+              docker logs "$CADDY" --tail 20 2>&1
+              echo "=== Caddy config ==="
+              docker exec "$CADDY" cat /etc/caddy/Caddyfile 2>/dev/null || echo "No Caddyfile"
+              echo "=== Test curl from Caddy to app ==="
+              docker exec "$CADDY" wget -q -O- http://sepe-bot-container:10000/api/server-info 2>&1 || echo "wget FAILED - THIS IS THE 502 CAUSE"
             fi
 
-            echo "=== IPTABLES ==="
-            sudo iptables -L -n 2>/dev/null | head -30 || echo "no iptables"
+            # FIX: Explicitly connect Caddy to caddy-net
+            echo "=== APPLYING FIX: reconnect Caddy to caddy-net ==="
+            if [ -n "$CADDY" ]; then
+              docker network connect caddy-net "$CADDY" 2>/dev/null && echo "Connected Caddy to caddy-net" || echo "Caddy already on caddy-net (or error)"
+              docker restart "$CADDY" 2>/dev/null && echo "Caddy restarted" || echo "Caddy restart failed"
+              sleep 3
+              echo "=== After fix: test from Caddy ==="
+              docker exec "$CADDY" wget -q -O- http://sepe-bot-container:10000/api/server-info 2>&1 || echo "Still failing after fix"
+            fi
 
-            echo "=== OOM EVENTS ==="
-            dmesg 2>/dev/null | grep -i "oom\|killed\|memory" | tail -20 || true
+            echo "=== caddy-net containers AFTER fix ==="
+            docker network inspect caddy-net --format='{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null || echo "caddy-net NOT FOUND"
 
-            echo "=== DIAGNOSTIC DONE ==="
+            echo "=== MEMORY ==="
+            free -m 2>/dev/null || cat /proc/meminfo | head -5
+
+            echo "=== DONE $(date) ==="
