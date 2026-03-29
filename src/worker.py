@@ -12,7 +12,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from src.sepe_api import check_zip
 from src.state import load_state, save_state
 from src.email_service import send_email, build_appointment_email
-from src.search_service import MAX_RECURRENCE_HOURS
+from src.search_service import MAX_RECURRENCE_HOURS, MAX_RECURRENCE_HOURS_DAILY
 
 # Configurar logging — stdout + fitxer rotatiu perquè /api/logs pugui llegir-lo
 LOG_FILE = os.path.join(os.path.dirname(__file__), '..', 'data', 'worker.log')
@@ -110,12 +110,16 @@ def run_worker():
                     freq_type = data.get('freq_type', 'once')
                     if freq_type != 'once':
                         created_at = data.get('created_at', 0)
-                        if created_at and (time.time() - created_at) > MAX_RECURRENCE_HOURS * 3600:
+                        max_h = MAX_RECURRENCE_HOURS_DAILY if freq_type == 'daily' else MAX_RECURRENCE_HOURS
+                        if created_at and (time.time() - created_at) > max_h * 3600:
                             data['active'] = False
-                            data['status_message'] = f"Expirada (màxim {MAX_RECURRENCE_HOURS}h de recurrència)"
+                            if freq_type == 'daily':
+                                data['status_message'] = f"Expirada (màxim {max_h // 24} dies de recurrència)"
+                            else:
+                                data['status_message'] = f"Expirada (màxim {max_h}h de recurrència)"
                             data['finished_at'] = datetime.now().strftime('%d/%m/%Y %H:%M')
                             updates_made = True
-                            logger.info(f"Cerca {dni} expirada per límit de recurrència ({MAX_RECURRENCE_HOURS}h)")
+                            logger.info(f"Cerca {dni} expirada per límit de recurrència ({max_h}h)")
                             continue
 
                     # --- GESTIÓ DE FREQÜÈNCIA (Lògica Temporal) ---
@@ -148,7 +152,7 @@ def run_worker():
                                     # Calculate next run time
                                     next_ts = last_complete + (interval_hours * 3600)
                                     next_time = datetime.fromtimestamp(next_ts).strftime('%H:%M')
-                                    data['status_message'] = f"En pausa (pròxima: {next_time})"
+                                    data['status_message'] = f"En pausa (propera: {next_time})"
                                     updates_made = True
                                     
                             elif freq_type == 'daily':
@@ -220,6 +224,7 @@ def run_worker():
                         now_str = datetime.now().strftime('%d/%m %H:%M')
                         data['status_message'] = f"ÈXIT! Cita {type_name} a {success_zip}"
                         data['last_result_message'] = f"CITA {type_name} DISPONIBLE DETECTADA EL {now_str}"
+                        data['last_success'] = f"Cita {type_name} a {success_zip} ({now_str})"
                         data['last_cycle_time'] = time.time()
                         
                         # Determinar tipus de cita per al correu

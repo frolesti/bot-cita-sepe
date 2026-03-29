@@ -16,6 +16,7 @@ from src.locations import LocationManager
 # més d'aquest temps activa, s'atura automàticament perquè l'usuari
 # no se n'oblidi.
 MAX_RECURRENCE_HOURS = int(os.getenv('MAX_RECURRENCE_HOURS', 24))
+MAX_RECURRENCE_HOURS_DAILY = int(os.getenv('MAX_RECURRENCE_HOURS_DAILY', 168))  # 1 setmana
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +161,8 @@ def restart_search(dni, owner_id):
     search['status_message'] = 'Reiniciant...'
     search['last_cycle_time'] = 0
     search['run_id'] = time.time()
+    search['created_at'] = time.time()  # Reset rellotge de recurrència
+    search['last_success'] = None
     save_state(all_searches)
     return True, "Cerca reiniciada"
 
@@ -214,6 +217,13 @@ def get_status_for_owner(owner_id):
         if is_active and idx == 0 and freq_type != 'once':
             next_run_time = _calc_next_run(freq_type, last_complete, data)
 
+        # Calcular si la cerca ha expirat
+        created_at = data.get('created_at', 0)
+        max_h = MAX_RECURRENCE_HOURS_DAILY if freq_type == 'daily' else MAX_RECURRENCE_HOURS
+        is_expired = (not is_active and freq_type != 'once'
+                      and created_at > 0
+                      and (time.time() - created_at) > max_h * 3600)
+
         status[dni] = {
             'current_zip': curr_zip,
             'total_zips': len(zips),
@@ -227,6 +237,10 @@ def get_status_for_owner(owner_id):
             'scope_name': data.get('scope_name', ''),
             'cycle_start_time': data.get('cycle_start_time'),
             'finished_at': data.get('finished_at'),
+            'created_at': created_at,
+            'is_expired': is_expired,
+            'last_success': data.get('last_success'),
+            'max_recurrence_hours': max_h,
         }
     return status
 
