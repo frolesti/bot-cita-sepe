@@ -16,123 +16,47 @@ jobs:
           key: ${{ secrets.VM_SSH_KEY }}
           command_timeout: 10m
           script: |
-            set -e
-            REPO_DIR="$HOME/bot-cita-sepe"
-            REPO_URL="https://github.com/frolesti/bot-cita-sepe.git"
-            CONTAINER_NAME="sepe-bot-container"
-            IMAGE_NAME="sepe-bot"
+            echo "=== DIAGNOSTIC RUN $(date) ==="
 
-            echo "=== DEPLOY START $(date) ==="
+            echo "=== ALL CONTAINERS ==="
+            docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Image}}"
 
-            # Pre-deploy diagnostics
-            echo ">> Disk BEFORE cleanup:"
+            echo "=== DOCKER NETWORKS ==="
+            docker network ls
+            echo "=== caddy-net inspect ==="
+            docker network inspect caddy-net 2>/dev/null | head -60 || echo "caddy-net not found"
+
+            echo "=== DISK ==="
             df -h / | tail -1
-            echo ">> Docker disk BEFORE cleanup:"
-            docker system df 2>/dev/null || true
-            echo ">> Running containers:"
-            docker ps --format "{{.Names}} {{.Status}}" 2>/dev/null || true
-            echo ">> All containers:"
-            docker ps -a --format "{{.Names}} {{.Status}}" 2>/dev/null || true
-            echo ">> Memory BEFORE:"
+
+            echo "=== MEMORY ==="
             free -m 2>/dev/null || cat /proc/meminfo | head -5
 
-            # Stop old app container
-            echo ">> Stopping old container..."
-            docker stop "$CONTAINER_NAME" 2>/dev/null || true
-            docker rm "$CONTAINER_NAME" 2>/dev/null || true
+            echo "=== APP CONTAINER LOGS (last 50) ==="
+            docker logs sepe-bot-container --tail 50 2>&1 || echo "No sepe-bot-container"
 
-            # Aggressive cleanup: remove ALL unused images, containers, volumes, networks
-            echo ">> Aggressive Docker cleanup..."
-            docker system prune -a -f --volumes 2>/dev/null || true
+            echo "=== APP INTERNAL TEST ==="
+            docker exec sepe-bot-container curl -sf http://localhost:10000/api/server-info 2>&1 || echo "INTERNAL CHECK FAILED"
 
-            echo ">> Disk AFTER cleanup:"
-            df -h / | tail -1
-
-            # Pull latest code (COS has no git, use alpine/git)
-            if [ -d "$REPO_DIR/.git" ]; then
-              echo ">> Pulling latest changes..."
-              docker run --rm -v "$REPO_DIR":/repo alpine/git -C /repo pull origin main
+            echo "=== CADDY CONTAINER LOGS (last 30) ==="
+            CADDY=$(docker ps -a --format "{{.Names}}" | grep -i caddy | head -1)
+            if [ -n "$CADDY" ]; then
+              echo "Caddy container: $CADDY"
+              docker logs "$CADDY" --tail 30 2>&1
+              echo "=== CADDY CONFIG ==="
+              docker exec "$CADDY" cat /etc/caddy/Caddyfile 2>/dev/null || echo "No Caddyfile found"
+              docker exec "$CADDY" caddy list-modules 2>/dev/null | head -5 || true
+              echo "=== CURL FROM CADDY TO APP ==="
+              docker exec "$CADDY" wget -q -O- http://sepe-bot-container:10000/api/server-info 2>&1 || echo "wget from caddy FAILED"
+              docker exec "$CADDY" curl -sf http://sepe-bot-container:10000/api/server-info 2>&1 || echo "curl from caddy FAILED"
             else
-              echo ">> Cloning repo..."
-              rm -rf "$REPO_DIR"
-              docker run --rm -v "$REPO_DIR":/repo alpine/git clone "$REPO_URL" /repo
+              echo "NO CADDY CONTAINER FOUND"
             fi
 
-            # Ensure .env is readable
-            sudo chmod 644 "$REPO_DIR/.env" 2>/dev/null || true
-            echo ">> .env content (keys only):"
-            grep -oP '^[A-Z_]+' "$REPO_DIR/.env" 2>/dev/null || echo "(no .env or empty)"
+            echo "=== IPTABLES ==="
+            sudo iptables -L -n 2>/dev/null | head -30 || echo "no iptables"
 
-            # Build new image
-            echo ">> Building Docker image..."
-            cd "$REPO_DIR"
-            docker build -t "$IMAGE_NAME" .
-
-            # Ensure caddy-net exists
-            docker network create caddy-net 2>/dev/null || true
-
-            # Start new container
-            echo ">> Starting container..."
-            docker run -d \
-              --name "$CONTAINER_NAME" \
-              --network caddy-net \
-              -p 10000:10000 \
-              --env-file "$REPO_DIR/.env" \
-              --restart unless-stopped \
-              "$IMAGE_NAME"
-
-            echo ">> Memory AFTER start:"
-            free -m 2>/dev/null || cat /proc/meminfo | head -5
-            echo ">> OOM events (last 20):"
+            echo "=== OOM EVENTS ==="
             dmesg 2>/dev/null | grep -i "oom\|killed\|memory" | tail -20 || true
 
-            # Check container status after 5s
-            sleep 5
-            if docker ps | grep -q "$CONTAINER_NAME"; then
-              echo ">> Container running after 5s - OK"
-            else
-              echo ">> ERROR: Container NOT running after 5s!"
-              echo ">> Container inspect:"
-              docker inspect "$CONTAINER_NAME" --format='Status={{.State.Status}} Exit={{.State.ExitCode}} OOM={{.State.OOMKilled}} Restarts={{.RestartCount}}' 2>/dev/null || true
-              docker logs "$CONTAINER_NAME" --tail 80
-              exit 1
-            fi
-
-            # Check again after 20s total (catch delayed crashes)
-            sleep 15
-            if docker ps | grep -q "$CONTAINER_NAME"; then
-              echo ">> Container still running after 20s - GOOD"
-            else
-              echo ">> ERROR: Container CRASHED after initial start!"
-              docker inspect "$CONTAINER_NAME" --format='Status={{.State.Status}} Exit={{.State.ExitCode}} OOM={{.State.OOMKilled}} Restarts={{.RestartCount}}' 2>/dev/null || true
-              docker logs "$CONTAINER_NAME" --tail 100
-              exit 1
-            fi
-
-            # Internal health check
-            echo ">> Internal health check:"
-            docker exec "$CONTAINER_NAME" curl -sf http://localhost:10000/api/server-info && echo " OK" || echo " FAILED"
-
-            # Restart Caddy to refresh Docker DNS resolution for new container
-            echo ">> Restarting Caddy to pick up new container IP..."
-            CADDY_NAME=$(docker ps -a --filter "name=caddy" --format "{{.Names}}" | head -1)
-            if [ -n "$CADDY_NAME" ]; then
-              docker restart "$CADDY_NAME" 2>/dev/null && echo ">> Caddy restarted: $CADDY_NAME" || echo ">> Could not restart Caddy"
-              sleep 3
-              if docker ps --filter "name=$CADDY_NAME" --filter "status=running" -q | grep -q .; then
-                echo ">> Caddy running OK after restart"
-              else
-                echo ">> WARNING: Caddy not running!"
-                docker logs "$CADDY_NAME" --tail 10
-              fi
-            else
-              echo ">> WARNING: No Caddy container found!"
-              echo ">> All containers:"
-              docker ps -a --format "{{.Names}} {{.Status}}"
-            fi
-
-            # Container logs for debugging
-            echo ">> Container logs:"
-            docker logs "$CONTAINER_NAME" --tail 20
-
-            echo "=== DEPLOY OK $(date) ==="
+            echo "=== DIAGNOSTIC DONE ==="
