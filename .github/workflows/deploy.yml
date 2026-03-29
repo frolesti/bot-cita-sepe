@@ -68,14 +68,42 @@ jobs:
               --restart unless-stopped \
               "$IMAGE_NAME"
 
+            # System diagnostics
+            echo ">> Memory:"
+            free -m 2>/dev/null || cat /proc/meminfo | head -5
+            echo ">> OOM events (last 10):"
+            dmesg 2>/dev/null | grep -i "oom\|killed" | tail -10 || true
+
             sleep 4
             if docker ps | grep -q "$CONTAINER_NAME"; then
-              echo ">> Container running OK"
-              docker logs "$CONTAINER_NAME" --tail 10
+              echo ">> Container running OK after 4s"
             else
-              echo ">> ERROR: Container not running!"
+              echo ">> ERROR: Container not running after 4s!"
+              docker logs "$CONTAINER_NAME" --tail 50
+              exit 1
+            fi
+
+            # Wait longer and check again (catch delayed crashes)
+            sleep 15
+            if docker ps | grep -q "$CONTAINER_NAME"; then
+              echo ">> Container still running after 19s - GOOD"
+              docker logs "$CONTAINER_NAME" --tail 30
+            else
+              echo ">> ERROR: Container CRASHED after initial start!"
+              echo ">> Container inspect:"
+              docker inspect "$CONTAINER_NAME" --format='{{.State.Status}} ExitCode={{.State.ExitCode}} OOMKilled={{.State.OOMKilled}} RestartCount={{.RestartCount}}' 2>/dev/null || true
+              echo ">> Full container logs:"
+              docker logs "$CONTAINER_NAME" --tail 100
+              # Try to restart it
+              echo ">> Attempting restart..."
+              docker start "$CONTAINER_NAME"
+              sleep 5
               docker logs "$CONTAINER_NAME" --tail 30
               exit 1
             fi
+
+            # Also make sure Caddy can reach the container
+            echo ">> Testing local connectivity:"
+            docker exec "$CONTAINER_NAME" curl -sf http://localhost:10000/api/server-info || echo ">> WARNING: internal health check failed"
 
             echo "=== DEPLOY OK $(date) ==="
