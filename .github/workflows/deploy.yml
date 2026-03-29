@@ -16,64 +16,133 @@ jobs:
           key: ${{ secrets.VM_SSH_KEY }}
           command_timeout: 10m
           script: |
-            exec 2>&1
-            DIAG="/tmp/sepe_diag_$(date +%s).txt"
-            {
-              echo "=== DIAGNOSTIC RUN $(date) ==="
+            REPO_DIR="$HOME/bot-cita-sepe"
+            REPO_URL="https://github.com/frolesti/bot-cita-sepe.git"
+            CONTAINER_NAME="sepe-bot-container"
+            IMAGE_NAME="sepe-bot"
+            NETWORK="caddy-net"
 
-              echo "=== ALL CONTAINERS ==="
-              docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Image}}"
+            echo "=== NUCLEAR FIX DEPLOY $(date) ==="
 
-              echo "=== NETWORKS ==="
-              docker network ls
+            # 1. Save Caddyfile if Caddy exists
+            CADDY_OLD=$(docker ps -a --format "{{.Names}}" | grep -i caddy | head -1)
+            if [ -n "$CADDY_OLD" ]; then
+              echo ">> Saving Caddyfile from $CADDY_OLD..."
+              docker exec "$CADDY_OLD" cat /etc/caddy/Caddyfile > /tmp/Caddyfile.bak 2>/dev/null || true
+              echo ">> Saved Caddyfile:"
+              cat /tmp/Caddyfile.bak 2>/dev/null || echo "(empty)"
+            fi
 
-              echo "=== caddy-net FULL INSPECT ==="
-              docker network inspect caddy-net 2>/dev/null || echo "caddy-net NOT FOUND"
+            # 2. Stop and remove ALL containers
+            echo ">> Stopping ALL containers..."
+            docker stop $(docker ps -aq) 2>/dev/null || true
+            docker rm -f $(docker ps -aq) 2>/dev/null || true
 
-              echo "=== APP INTERNAL TEST ==="
-              docker exec sepe-bot-container curl -sf http://localhost:10000/api/server-info 2>&1 || echo "INTERNAL CHECK FAILED"
+            # 3. Remove custom networks
+            echo ">> Removing networks..."
+            docker network rm $NETWORK 2>/dev/null || true
 
-              echo "=== CADDY DIAGNOSTICS ==="
-              CADDY=$(docker ps -a --format "{{.Names}}" | grep -i caddy | head -1)
-              echo "Caddy container name: '$CADDY'"
-              if [ -n "$CADDY" ]; then
-                echo "=== Caddy container inspect (Networks) ==="
-                docker inspect "$CADDY" --format='{{json .NetworkSettings.Networks}}' 2>/dev/null
-                echo ""
-                echo "=== Caddy logs (last 40) ==="
-                docker logs "$CADDY" --tail 40 2>&1
-                echo "=== Caddyfile ==="
-                docker exec "$CADDY" cat /etc/caddy/Caddyfile 2>/dev/null || echo "No Caddyfile found"
-                echo "=== Test from Caddy to app ==="
-                docker exec "$CADDY" wget -q -O- http://sepe-bot-container:10000/api/server-info 2>&1 || echo "wget FAILED"
-                echo "=== nslookup from Caddy ==="
-                docker exec "$CADDY" nslookup sepe-bot-container 2>&1 || echo "nslookup not available"
-                echo "=== ping from Caddy ==="
-                docker exec "$CADDY" ping -c 2 sepe-bot-container 2>&1 || echo "ping failed or not available"
-              else
-                echo "NO CADDY CONTAINER FOUND!"
-              fi
+            # 4. Full prune (images, volumes, build cache)
+            echo ">> Full Docker prune..."
+            docker system prune -a --force --volumes 2>/dev/null || true
 
-              echo "=== APP container inspect (Networks) ==="
-              docker inspect sepe-bot-container --format='{{json .NetworkSettings.Networks}}' 2>/dev/null || echo "app container not found"
-              echo ""
+            # 5. Pull latest code
+            echo ">> Getting latest code..."
+            if [ -d "$REPO_DIR/.git" ]; then
+              docker run --rm -v "$REPO_DIR":/repo alpine/git -C /repo fetch origin main
+              docker run --rm -v "$REPO_DIR":/repo alpine/git -C /repo reset --hard origin/main
+            else
+              rm -rf "$REPO_DIR"
+              docker run --rm -v "$REPO_DIR":/repo alpine/git clone "$REPO_URL" /repo
+            fi
 
-              echo "=== MEMORY ==="
-              free -m 2>/dev/null || cat /proc/meminfo | head -5
+            # 6. Create Docker network
+            echo ">> Creating caddy-net..."
+            docker network create $NETWORK
 
-              echo "=== DISK ==="
-              df -h / 2>/dev/null
+            # 7. Build app image
+            echo ">> Building app Docker image..."
+            cd "$REPO_DIR"
+            docker build -t "$IMAGE_NAME" .
 
-              echo "=== DOCKER INFO ==="
-              docker info 2>&1 | head -20
+            # 8. Start app container
+            echo ">> Starting app container..."
+            docker run -d \
+              --name "$CONTAINER_NAME" \
+              --network $NETWORK \
+              -p 10000:10000 \
+              --env-file "$REPO_DIR/.env" \
+              --restart unless-stopped \
+              "$IMAGE_NAME"
 
-              echo "=== DONE $(date) ==="
-            } > "$DIAG" 2>&1
+            sleep 5
+            if docker ps | grep -q "$CONTAINER_NAME"; then
+              echo ">> App container running!"
+            else
+              echo ">> ERROR: App not running, logs:"
+              docker logs "$CONTAINER_NAME" --tail 30
+              exit 1
+            fi
 
-            cat "$DIAG"
+            # 9. Create Caddyfile
+            echo ">> Setting up Caddy..."
+            CADDY_DIR="$HOME/caddy-config"
+            mkdir -p "$CADDY_DIR"
 
-            # Upload to paste services
-            echo "=== UPLOADING DIAGNOSTICS ==="
-            PASTE_URL=$(curl -sf --data-binary @"$DIAG" https://paste.rs/ 2>/dev/null) && echo "PASTE: $PASTE_URL" || echo "paste.rs failed"
-            PASTE_URL2=$(curl -sf -F 'sprunge=<'"$DIAG" http://sprunge.us 2>/dev/null) && echo "SPRUNGE: $PASTE_URL2" || echo "sprunge.us failed"
-            IX_URL=$(cat "$DIAG" | curl -sf -F 'f:1=<-' ix.io 2>/dev/null) && echo "IX: $IX_URL" || echo "ix.io failed"
+            if [ -f /tmp/Caddyfile.bak ] && [ -s /tmp/Caddyfile.bak ]; then
+              echo ">> Using saved Caddyfile"
+              cp /tmp/Caddyfile.bak "$CADDY_DIR/Caddyfile"
+            else
+              echo ">> Creating fresh Caddyfile"
+              cat > "$CADDY_DIR/Caddyfile" <<'EOF'
+            cita-sepe.duckdns.org {
+                reverse_proxy sepe-bot-container:10000
+            }
+            EOF
+            fi
+
+            echo ">> Caddyfile content:"
+            cat "$CADDY_DIR/Caddyfile"
+
+            # 10. Start Caddy
+            echo ">> Starting Caddy container..."
+            docker run -d \
+              --name caddy \
+              --network $NETWORK \
+              -p 80:80 \
+              -p 443:443 \
+              -v caddy_data:/data \
+              -v caddy_config:/config \
+              -v "$CADDY_DIR/Caddyfile":/etc/caddy/Caddyfile:ro \
+              --restart unless-stopped \
+              caddy:2-alpine
+
+            sleep 8
+
+            if docker ps | grep -q caddy; then
+              echo ">> Caddy running!"
+            else
+              echo ">> ERROR: Caddy not running, logs:"
+              docker logs caddy --tail 30
+              exit 1
+            fi
+
+            # 11. Verify everything
+            echo "=== VERIFICATION ==="
+            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Image}}"
+            echo ""
+
+            echo ">> Network containers:"
+            docker network inspect $NETWORK --format='{{range .Containers}}{{.Name}} {{end}}'
+            echo ""
+
+            echo ">> App health check:"
+            docker exec "$CONTAINER_NAME" curl -sf http://localhost:10000/api/server-info && echo " [OK]" || echo " [FAIL]"
+
+            echo ">> Caddy -> App connectivity:"
+            docker exec caddy wget -q -O- http://sepe-bot-container:10000/api/server-info 2>&1 && echo " [OK]" || echo " [FAIL]"
+
+            echo ">> Caddy logs:"
+            docker logs caddy --tail 10 2>&1
+
+            echo "=== NUCLEAR FIX COMPLETE $(date) ==="
