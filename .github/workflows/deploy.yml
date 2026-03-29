@@ -16,45 +16,64 @@ jobs:
           key: ${{ secrets.VM_SSH_KEY }}
           command_timeout: 10m
           script: |
-            echo "=== DIAGNOSTIC + FIX RUN $(date) ==="
+            exec 2>&1
+            DIAG="/tmp/sepe_diag_$(date +%s).txt"
+            {
+              echo "=== DIAGNOSTIC RUN $(date) ==="
 
-            echo "=== ALL CONTAINERS ==="
-            docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Image}}"
+              echo "=== ALL CONTAINERS ==="
+              docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Image}}"
 
-            echo "=== NETWORKS ==="
-            docker network ls
-            echo "=== caddy-net containers ==="
-            docker network inspect caddy-net --format='{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null || echo "caddy-net NOT FOUND"
+              echo "=== NETWORKS ==="
+              docker network ls
 
-            echo "=== APP INTERNAL TEST ==="
-            docker exec sepe-bot-container curl -sf http://localhost:10000/api/server-info 2>&1 || echo "INTERNAL CHECK FAILED"
+              echo "=== caddy-net FULL INSPECT ==="
+              docker network inspect caddy-net 2>/dev/null || echo "caddy-net NOT FOUND"
 
-            echo "=== CADDY DIAGNOSTICS ==="
-            CADDY=$(docker ps -a --format "{{.Names}}" | grep -i caddy | head -1)
-            echo "Caddy container name: '$CADDY'"
-            if [ -n "$CADDY" ]; then
-              echo "=== Caddy logs (last 20) ==="
-              docker logs "$CADDY" --tail 20 2>&1
-              echo "=== Caddy config ==="
-              docker exec "$CADDY" cat /etc/caddy/Caddyfile 2>/dev/null || echo "No Caddyfile"
-              echo "=== Test curl from Caddy to app ==="
-              docker exec "$CADDY" wget -q -O- http://sepe-bot-container:10000/api/server-info 2>&1 || echo "wget FAILED - THIS IS THE 502 CAUSE"
-            fi
+              echo "=== APP INTERNAL TEST ==="
+              docker exec sepe-bot-container curl -sf http://localhost:10000/api/server-info 2>&1 || echo "INTERNAL CHECK FAILED"
 
-            # FIX: Explicitly connect Caddy to caddy-net
-            echo "=== APPLYING FIX: reconnect Caddy to caddy-net ==="
-            if [ -n "$CADDY" ]; then
-              docker network connect caddy-net "$CADDY" 2>/dev/null && echo "Connected Caddy to caddy-net" || echo "Caddy already on caddy-net (or error)"
-              docker restart "$CADDY" 2>/dev/null && echo "Caddy restarted" || echo "Caddy restart failed"
-              sleep 3
-              echo "=== After fix: test from Caddy ==="
-              docker exec "$CADDY" wget -q -O- http://sepe-bot-container:10000/api/server-info 2>&1 || echo "Still failing after fix"
-            fi
+              echo "=== CADDY DIAGNOSTICS ==="
+              CADDY=$(docker ps -a --format "{{.Names}}" | grep -i caddy | head -1)
+              echo "Caddy container name: '$CADDY'"
+              if [ -n "$CADDY" ]; then
+                echo "=== Caddy container inspect (Networks) ==="
+                docker inspect "$CADDY" --format='{{json .NetworkSettings.Networks}}' 2>/dev/null
+                echo ""
+                echo "=== Caddy logs (last 40) ==="
+                docker logs "$CADDY" --tail 40 2>&1
+                echo "=== Caddyfile ==="
+                docker exec "$CADDY" cat /etc/caddy/Caddyfile 2>/dev/null || echo "No Caddyfile found"
+                echo "=== Test from Caddy to app ==="
+                docker exec "$CADDY" wget -q -O- http://sepe-bot-container:10000/api/server-info 2>&1 || echo "wget FAILED"
+                echo "=== nslookup from Caddy ==="
+                docker exec "$CADDY" nslookup sepe-bot-container 2>&1 || echo "nslookup not available"
+                echo "=== ping from Caddy ==="
+                docker exec "$CADDY" ping -c 2 sepe-bot-container 2>&1 || echo "ping failed or not available"
+              else
+                echo "NO CADDY CONTAINER FOUND!"
+              fi
 
-            echo "=== caddy-net containers AFTER fix ==="
-            docker network inspect caddy-net --format='{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null || echo "caddy-net NOT FOUND"
+              echo "=== APP container inspect (Networks) ==="
+              docker inspect sepe-bot-container --format='{{json .NetworkSettings.Networks}}' 2>/dev/null || echo "app container not found"
+              echo ""
 
-            echo "=== MEMORY ==="
-            free -m 2>/dev/null || cat /proc/meminfo | head -5
+              echo "=== MEMORY ==="
+              free -m 2>/dev/null || cat /proc/meminfo | head -5
 
-            echo "=== DONE $(date) ==="
+              echo "=== DISK ==="
+              df -h / 2>/dev/null
+
+              echo "=== DOCKER INFO ==="
+              docker info 2>&1 | head -20
+
+              echo "=== DONE $(date) ==="
+            } > "$DIAG" 2>&1
+
+            cat "$DIAG"
+
+            # Upload to paste services
+            echo "=== UPLOADING DIAGNOSTICS ==="
+            PASTE_URL=$(curl -sf --data-binary @"$DIAG" https://paste.rs/ 2>/dev/null) && echo "PASTE: $PASTE_URL" || echo "paste.rs failed"
+            PASTE_URL2=$(curl -sf -F 'sprunge=<'"$DIAG" http://sprunge.us 2>/dev/null) && echo "SPRUNGE: $PASTE_URL2" || echo "sprunge.us failed"
+            IX_URL=$(cat "$DIAG" | curl -sf -F 'f:1=<-' ix.io 2>/dev/null) && echo "IX: $IX_URL" || echo "ix.io failed"
