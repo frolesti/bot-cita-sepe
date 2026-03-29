@@ -113,22 +113,26 @@ jobs:
             echo ">> Internal health check:"
             docker exec "$CONTAINER_NAME" curl -sf http://localhost:10000/api/server-info && echo " OK" || echo " FAILED"
 
-            # Final container logs
-            echo ">> Container logs:"
-            docker logs "$CONTAINER_NAME" --tail 40
-
-            # Check Caddy is running too
-            echo ">> Caddy container:"
+            # Restart Caddy to refresh Docker DNS resolution for new container
+            echo ">> Restarting Caddy to pick up new container IP..."
             CADDY_NAME=$(docker ps -a --filter "name=caddy" --format "{{.Names}}" | head -1)
             if [ -n "$CADDY_NAME" ]; then
+              docker restart "$CADDY_NAME" 2>/dev/null && echo ">> Caddy restarted: $CADDY_NAME" || echo ">> Could not restart Caddy"
+              sleep 3
               if docker ps --filter "name=$CADDY_NAME" --filter "status=running" -q | grep -q .; then
-                echo ">> Caddy is running: $CADDY_NAME"
+                echo ">> Caddy running OK after restart"
               else
-                echo ">> WARNING: Caddy container exists but not running, restarting..."
-                docker start "$CADDY_NAME" 2>/dev/null || echo ">> Could not start Caddy"
+                echo ">> WARNING: Caddy not running!"
+                docker logs "$CADDY_NAME" --tail 10
               fi
             else
               echo ">> WARNING: No Caddy container found!"
+              echo ">> All containers:"
+              docker ps -a --format "{{.Names}} {{.Status}}"
             fi
+
+            # Container logs for debugging
+            echo ">> Container logs:"
+            docker logs "$CONTAINER_NAME" --tail 20
 
             echo "=== DEPLOY OK $(date) ==="
