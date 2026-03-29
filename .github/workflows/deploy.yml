@@ -7,65 +7,72 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - name: Deploy and diagnose via SSH
-        id: ssh_deploy
-        uses: appleboy/ssh-action@v1
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_SHA: ${{ github.sha }}
-        with:
-          host: 34.175.104.101
-          username: ${{ secrets.VM_SSH_USER }}
-          key: ${{ secrets.VM_SSH_KEY }}
-          command_timeout: 10m
-          envs: GH_TOKEN,GH_SHA
-          script: |
-            DIAG="/tmp/deploy_diag.txt"
-            {
-              echo "=== DEPLOY DIAGNOSTICS $(date) ==="
-              echo "=== RUNNING CONTAINERS ==="
-              docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Image}}"
-              echo ""
-              echo "=== NETWORKS ==="
-              docker network ls
-              echo ""
-              echo "=== caddy-net INSPECT ==="
-              docker network inspect caddy-net 2>&1 | head -50
-              echo ""
-              echo "=== APP CONTAINER NETWORKS ==="
-              docker inspect sepe-bot-container --format='{{json .NetworkSettings.Networks}}' 2>/dev/null || echo "not found"
-              echo ""
-              echo "=== CADDY CONTAINER NETWORKS ==="
-              docker inspect caddy --format='{{json .NetworkSettings.Networks}}' 2>/dev/null || echo "not found"
-              echo ""
-              echo "=== CADDYFILE ==="
-              docker exec caddy cat /etc/caddy/Caddyfile 2>/dev/null || echo "no caddyfile"
-              echo ""
-              echo "=== APP HEALTH (from host) ==="
-              docker exec sepe-bot-container curl -sf http://localhost:10000/api/server-info 2>&1 || echo "app health FAIL"
-              echo ""
-              echo "=== CADDY -> APP TEST ==="
-              docker exec caddy wget -q -O- http://sepe-bot-container:10000/api/server-info 2>&1 || echo "caddy->app FAIL"
-              echo ""
-              echo "=== CADDY LOGS (last 30) ==="
-              docker logs caddy --tail 30 2>&1
-              echo ""
-              echo "=== APP LOGS (last 15) ==="
-              docker logs sepe-bot-container --tail 15 2>&1
-              echo ""
-              echo "=== MEMORY ==="
-              free -m 2>/dev/null || cat /proc/meminfo 2>/dev/null | head -5
-              echo ""
-              echo "=== DISK ==="
-              df -h / 2>/dev/null
-              echo "=== END ==="
-            } > "$DIAG" 2>&1
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.VM_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H 34.175.104.101 >> ~/.ssh/known_hosts 2>/dev/null
 
-            # Post diagnostics as a GitHub commit comment
-            BODY=$(cat "$DIAG" | python3 -c "import sys,json; print(json.dumps('```\\n'+sys.stdin.read()+'\\n```'))" 2>/dev/null || cat "$DIAG" | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/^/"/;s/$/"/')
-            curl -sf -X POST \
-              "https://api.github.com/repos/frolesti/bot-cita-sepe/commits/$GH_SHA/comments" \
-              -H "Authorization: token $GH_TOKEN" \
-              -H "Content-Type: application/json" \
-              -d "{\"body\":$BODY}" && echo ">> Diagnostics posted to commit comment" || echo ">> Failed to post diagnostics"
+      - name: Run diagnostics via SSH
+        id: diag
+        run: |
+          set +e
+          OUTPUT=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${{ secrets.VM_SSH_USER }}@34.175.104.101 'bash -s' << 'ENDSSH'
+          echo "=== DEPLOY DIAGNOSTICS $(date) ==="
+          echo "=== RUNNING CONTAINERS ==="
+          docker ps -a
+          echo ""
+          echo "=== NETWORKS ==="
+          docker network ls
+          echo ""
+          echo "=== caddy-net INSPECT ==="
+          docker network inspect caddy-net 2>&1 | head -60
+          echo ""
+          echo "=== CADDYFILE ==="
+          docker exec caddy cat /etc/caddy/Caddyfile 2>/dev/null || echo "no caddyfile or no caddy container"
+          echo ""
+          echo "=== APP HEALTH (from host) ==="
+          docker exec sepe-bot-container curl -sf http://localhost:10000/api/server-info 2>&1 || echo "app health FAIL"
+          echo ""
+          echo "=== CADDY -> APP TEST ==="
+          docker exec caddy wget -q -O- http://sepe-bot-container:10000/api/server-info 2>&1 || echo "caddy->app FAIL"
+          echo ""
+          echo "=== CADDY LOGS (last 30) ==="
+          docker logs caddy --tail 30 2>&1
+          echo ""
+          echo "=== APP LOGS (last 15) ==="
+          docker logs sepe-bot-container --tail 15 2>&1
+          echo ""
+          echo "=== MEMORY ==="
+          free -m 2>/dev/null || head -5 /proc/meminfo 2>/dev/null || echo "N/A"
+          echo ""
+          echo "=== DISK ==="
+          df -h / 2>/dev/null || echo "N/A"
+          echo "=== END ==="
+          ENDSSH
+          )
+          echo "$OUTPUT"
+          # Save to file for next step
+          echo "$OUTPUT" > /tmp/diag_output.txt
+
+      - name: Post diagnostics as commit comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let body = 'No diagnostics captured';
+            try {
+              body = fs.readFileSync('/tmp/diag_output.txt', 'utf8');
+            } catch(e) {
+              body = 'Failed to read diagnostics: ' + e.message;
+            }
+            await github.rest.repos.createCommitComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha,
+              body: '```\n' + body + '\n```'
+            });
