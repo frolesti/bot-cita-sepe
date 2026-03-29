@@ -42,11 +42,24 @@ jobs:
             cd "$REPO_DIR"
             docker build -t "$IMAGE_NAME" .
 
+            # Clean up old images/containers to free disk space
+            echo ">> Cleaning up old Docker resources..."
+            docker image prune -f
+            docker container prune -f
+            docker builder prune -f 2>/dev/null || true
+
             # Restart container
             echo ">> Restarting container..."
             docker stop "$CONTAINER_NAME" 2>/dev/null || true
             docker rm "$CONTAINER_NAME" 2>/dev/null || true
             docker network create caddy-net 2>/dev/null || true
+
+            # Disk usage diagnostic
+            echo ">> Disk usage:"
+            df -h / | tail -1
+            echo ">> Docker disk usage:"
+            docker system df 2>/dev/null || true
+
             docker run -d \
               --name "$CONTAINER_NAME" \
               --network caddy-net \
@@ -58,10 +71,10 @@ jobs:
             sleep 4
             if docker ps | grep -q "$CONTAINER_NAME"; then
               echo ">> Container running OK"
-              docker logs "$CONTAINER_NAME" --tail 3
+              docker logs "$CONTAINER_NAME" --tail 10
             else
               echo ">> ERROR: Container not running!"
-              docker logs "$CONTAINER_NAME" --tail 20
+              docker logs "$CONTAINER_NAME" --tail 30
               exit 1
             fi
 
