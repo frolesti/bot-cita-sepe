@@ -1,6 +1,5 @@
 flask
-selenium
-webdriver-manager
+requests
 python-dotenv
 schedule
 Flask-Mail

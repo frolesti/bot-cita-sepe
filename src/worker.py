@@ -9,7 +9,7 @@ from dotenv import load_dotenv
 # Afegim el directori arrel al path per poder importar src
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from src.sepe_bot import SepeBot
+from src.sepe_api import check_zip
 from src.state import load_state, save_state
 from src.email_service import send_email, build_appointment_email
 from src.search_service import MAX_RECURRENCE_HOURS
@@ -34,11 +34,9 @@ load_dotenv()
 
 
 def check_single_zip(dni, data, zip_code):
-    """Comprova un sol codi postal."""
+    """Comprova un sol codi postal via HTTP API (sense Chrome)."""
     try:
         logger.info(f"--> [Thread] Comprovant DNI {dni} a CP {zip_code}")
-        # En el worker, SEMPRE headless=True excepte debug explícit
-        bot = SepeBot(headless=True) 
         
         # Recuperem tràmit ID si el tenim guardat (per defecte "158" si no hi és)
         tramite_id = data.get('tramite_id', '158')
@@ -46,14 +44,12 @@ def check_single_zip(dni, data, zip_code):
         # Suport multi-tipus: appt_types (llista) o fallback a type (string)
         appt_types = data.get('appt_types', [data.get('type', 'person')])
         
-        results = bot.check_appointment(
+        results = check_zip(
             zip_code=zip_code, 
             dni=dni, 
             appt_types=appt_types,
             tramite_id=tramite_id
         )
-        
-        bot.close()
         
         # Extreure info d'oficines (si n'hi ha)
         offices_info = results.get('offices', [])
@@ -71,10 +67,6 @@ def check_single_zip(dni, data, zip_code):
             
     except Exception as e:
         logger.error(f"Error comprovant per {dni} a {zip_code}: {e}")
-        try:
-            bot.close()
-        except:
-            pass
         return False, None, None, []
 
 def run_worker():

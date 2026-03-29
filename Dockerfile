@@ -1,23 +1,14 @@
 FROM python:3.10-slim
 
-# Install system dependencies required for Chromium and Selenium
+# Install minimal system dependencies (supervisor for process management)
 RUN apt-get update && apt-get install -y \
-    wget \
-    gnupg \
-    unzip \
     curl \
-    chromium \
-    chromium-driver \
     supervisor \
     && rm -rf /var/lib/apt/lists/*
 
 # Set timezone to Europe/Madrid (Barcelona)
 ENV TZ=Europe/Madrid
 RUN ln -snf /usr/share/zoneinfo/Europe/Madrid /etc/localtime && echo "Europe/Madrid" > /etc/timezone
-
-# Set environment variables for Chromium
-ENV CHROME_BIN=/usr/bin/chromium
-ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver
 
 # Set up the working directory
 WORKDIR /app
@@ -35,7 +26,7 @@ COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 # Create the data directory if it doesn't exist (for state.json)
 RUN mkdir -p data
 
-# Expose the port (Render will provide the PORT env var)
+# Expose the port
 EXPOSE 10000
 
 # Start supervisor which will manage both Web and Worker
