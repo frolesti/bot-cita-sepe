@@ -7,72 +7,66 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
-      - name: Set up SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.VM_SSH_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H 34.175.104.101 >> ~/.ssh/known_hosts 2>/dev/null
-
-      - name: Run diagnostics via SSH
-        id: diag
-        run: |
-          set +e
-          OUTPUT=$(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 ${{ secrets.VM_SSH_USER }}@34.175.104.101 'bash -s' << 'ENDSSH'
-          echo "=== DEPLOY DIAGNOSTICS $(date) ==="
-          echo "=== RUNNING CONTAINERS ==="
-          docker ps -a
-          echo ""
-          echo "=== NETWORKS ==="
-          docker network ls
-          echo ""
-          echo "=== caddy-net INSPECT ==="
-          docker network inspect caddy-net 2>&1 | head -60
-          echo ""
-          echo "=== CADDYFILE ==="
-          docker exec caddy cat /etc/caddy/Caddyfile 2>/dev/null || echo "no caddyfile or no caddy container"
-          echo ""
-          echo "=== APP HEALTH (from host) ==="
-          docker exec sepe-bot-container curl -sf http://localhost:10000/api/server-info 2>&1 || echo "app health FAIL"
-          echo ""
-          echo "=== CADDY -> APP TEST ==="
-          docker exec caddy wget -q -O- http://sepe-bot-container:10000/api/server-info 2>&1 || echo "caddy->app FAIL"
-          echo ""
-          echo "=== CADDY LOGS (last 30) ==="
-          docker logs caddy --tail 30 2>&1
-          echo ""
-          echo "=== APP LOGS (last 15) ==="
-          docker logs sepe-bot-container --tail 15 2>&1
-          echo ""
-          echo "=== MEMORY ==="
-          free -m 2>/dev/null || head -5 /proc/meminfo 2>/dev/null || echo "N/A"
-          echo ""
-          echo "=== DISK ==="
-          df -h / 2>/dev/null || echo "N/A"
-          echo "=== END ==="
-          ENDSSH
-          )
-          echo "$OUTPUT"
-          # Save to file for next step
-          echo "$OUTPUT" > /tmp/diag_output.txt
-
-      - name: Post diagnostics as commit comment
-        uses: actions/github-script@v7
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
         with:
+          host: 34.175.104.101
+          username: ${{ secrets.VM_SSH_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          command_timeout: 10m
           script: |
-            const fs = require('fs');
-            let body = 'No diagnostics captured';
-            try {
-              body = fs.readFileSync('/tmp/diag_output.txt', 'utf8');
-            } catch(e) {
-              body = 'Failed to read diagnostics: ' + e.message;
-            }
-            await github.rest.repos.createCommitComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              commit_sha: context.sha,
-              body: '```\n' + body + '\n```'
-            });
+            set -e
+            REPO_DIR="$HOME/bot-cita-sepe"
+            REPO_URL="https://github.com/frolesti/bot-cita-sepe.git"
+            CONTAINER_NAME="sepe-bot-container"
+            IMAGE_NAME="sepe-bot"
+
+            echo "=== DEPLOY START $(date) ==="
+
+            # Pull latest code (COS has no git, use alpine/git)
+            if [ -d "$REPO_DIR/.git" ]; then
+              echo ">> Pulling latest changes..."
+              docker run --rm -v "$REPO_DIR":/repo alpine/git -C /repo fetch origin main
+              docker run --rm -v "$REPO_DIR":/repo alpine/git -C /repo reset --hard origin/main
+            else
+              echo ">> Cloning repo..."
+              rm -rf "$REPO_DIR"
+              docker run --rm -v "$REPO_DIR":/repo alpine/git clone "$REPO_URL" /repo
+            fi
+
+            # Ensure .env is readable
+            sudo chmod 644 "$REPO_DIR/.env" 2>/dev/null || true
+
+            # Build new image
+            echo ">> Building Docker image..."
+            cd "$REPO_DIR"
+            docker build -t "$IMAGE_NAME" .
+
+            # Restart container
+            echo ">> Restarting container..."
+            docker stop "$CONTAINER_NAME" 2>/dev/null || true
+            docker rm "$CONTAINER_NAME" 2>/dev/null || true
+            docker network create caddy-net 2>/dev/null || true
+            docker run -d \
+              --name "$CONTAINER_NAME" \
+              --network caddy-net \
+              -p 10000:10000 \
+              --env-file "$REPO_DIR/.env" \
+              --restart unless-stopped \
+              "$IMAGE_NAME"
+
+            sleep 5
+            if docker ps | grep -q "$CONTAINER_NAME"; then
+              echo ">> Container running OK"
+              docker logs "$CONTAINER_NAME" --tail 5
+            else
+              echo ">> ERROR: Container not running!"
+              docker logs "$CONTAINER_NAME" --tail 20
+              exit 1
+            fi
+
+            # Cleanup old images
+            docker image prune -f 2>/dev/null || true
+
+            echo "=== DEPLOY OK $(date) ==="
