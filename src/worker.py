@@ -222,9 +222,9 @@ def run_worker():
                         # !!! ÈXIT !!!
                         type_name = 'Presencial' if found_type == 'person' else 'Telefònica'
                         now_str = datetime.now().strftime('%d/%m %H:%M')
-                        data['status_message'] = f"ÈXIT! Cita {type_name} a {success_zip}"
+                        data['status_message'] = f"ÈXIT! Cita {type_name} al CP {success_zip}"
                         data['last_result_message'] = f"CITA {type_name} DISPONIBLE DETECTADA EL {now_str}"
-                        data['last_success'] = f"Cita {type_name} a {success_zip} ({now_str})"
+                        data['last_success'] = f"Cita {type_name} al CP {success_zip} ({now_str})"
                         data['last_cycle_time'] = time.time()
                         
                         # Determinar tipus de cita per al correu

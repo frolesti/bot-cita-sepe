@@ -516,8 +516,8 @@
         <div class="card p-3 mb-4" id="active_searches_section">
             <div class="d-flex justify-content-between align-items-center mb-2">
                 <h3 class="mb-0">Cerques Actives<span class="cursor"></span></h3>
-                <!-- Server Load Indicator -->
-                <div id="server-load-widget" class="d-flex align-items-center gap-2" style="font-size:0.82rem; cursor:help;"
+                <!-- Server Load Indicator (hidden by default, shown only when search is actively running) -->
+                <div id="server-load-widget" class="d-flex align-items-center gap-2" style="font-size:0.82rem; cursor:help; display:none;"
                      title="Indica la càrrega actual del servidor. Quan és alta, les cerques poden trigar més. Si arriba al 100%, no es podran crear noves cerques fins que n'acabin d'altres.">
                     <div class="d-flex align-items-center gap-1">
                         <span id="load-icon" style="font-size:0.7rem;">&#9679;</span>
@@ -1245,7 +1245,7 @@
                             var isPaused = msg.includes('En pausa');
                             
                             if (status.next_run_time && isPaused) {
-                                displayMsg = 'Propera: ' + status.next_run_time;
+                                displayMsg = 'Propera cerca: ' + status.next_run_time;
                             }
                             
                             if (isPaused) {
@@ -1278,7 +1278,7 @@
                             if (status.active && status.freq_type !== 'once' && $cancelAdvice.length === 0) {
                                 $successTag.after(
                                     '<div class="cancel-advice alert alert-success py-1 px-2 mt-2 mb-0" style="font-size:0.78rem;">' +
-                                    '<i class="bi bi-lightbulb"></i> <strong>Cita trobada!</strong> Si ja has reservat, considera esborrar aquesta cerca per alliberar recursos del servidor.' +
+                                    '<i class="bi bi-lightbulb"></i> <strong>Cita trobada!</strong> Ves a la web del SEPE per reservar-la. Després, esborra aquesta cerca per alliberar recursos del servidor.' +
                                     '</div>'
                                 );
                             }
@@ -1318,6 +1318,22 @@
 
                     prevStatus = JSON.parse(JSON.stringify(data));
                     checkSubmitBlock();
+
+                    // Show/hide server widget based on whether any search is actively running
+                    var anySearching = false;
+                    for (const [dni, status] of Object.entries(data)) {
+                        var msg = status.status_message || '';
+                        if (status.active && !msg.includes('En pausa') && !msg.includes('Cicle completat')) {
+                            anySearching = true;
+                            break;
+                        }
+                    }
+                    if (anySearching) {
+                        $('#server-load-widget').css('display', '');
+                    } else {
+                        $('#server-load-widget').css('display', 'none');
+                        $('#capacity-alert').hide();
+                    }
 
                     if (!anyActive && statusInterval) {
                         // Keep polling a bit longer then stop
