@@ -122,7 +122,7 @@ def build_appointment_email(dni, success_zip, type_name, types_str, scope_name, 
             <a href="{sepe_url}" style="display:inline-block;background:#d32f2f;color:white;text-decoration:none;padding:14px 32px;border-radius:6px;font-weight:700;font-size:15px;letter-spacing:0.3px;">Reservar cita ara &rarr;</a>
         </div>
         <p style="text-align:center;color:#90a4ae;font-size:12px;margin-top:12px;">El bot <strong>no</strong> reserva automàticament. Ves a la web del SEPE per completar la reserva.</p>
-        {'<div style="margin-top:18px;background:#fff3e0;border:1px solid #ffe0b2;border-left:4px solid #f57c00;border-radius:6px;padding:12px 16px;"><div style="font-weight:600;color:#e65100;font-size:13px;margin-bottom:4px;">⚠️ Recomanació: Cancel·la la cerca recurrent</div><div style="color:#5d4037;font-size:12px;">Si ja has reservat la cita, recorda <strong>esborrar la cerca activa</strong> a la pàgina del bot. Així alliberaràs recursos del servidor perquè altres persones puguin fer servir el servei. Gràcies!</div></div>' if freq_type != 'once' else ''}
+        {'<div style="margin-top:18px;background:#e8f5e9;border:1px solid #c8e6c9;border-left:4px solid #43a047;border-radius:6px;padding:12px 16px;"><div style="font-weight:600;color:#2e7d32;font-size:13px;margin-bottom:4px;">✅ Cerca recurrent aturada automàticament</div><div style="color:#33691e;font-size:12px;">La cerca s ha aturat en trobar cita. Ves a la web del SEPE per <strong>reservar-la</strong> manualment.</div></div>' if freq_type != 'once' else ''}
     </div>
 
     <!-- Footer -->

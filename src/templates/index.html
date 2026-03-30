@@ -1273,12 +1273,12 @@
                             } else {
                                 $successTag.html('<span class="badge bg-success" style="font-size:0.72rem;"><i class="bi bi-check-circle-fill"></i> ' + status.last_success + '</span>');
                             }
-                            // Show cancel recommendation for recurring searches
+                            // Show auto-stop info for recurring searches
                             var $cancelAdvice = $row.find('.cancel-advice');
-                            if (status.active && status.freq_type !== 'once' && $cancelAdvice.length === 0) {
+                            if (status.freq_type !== 'once' && $cancelAdvice.length === 0) {
                                 $successTag.after(
                                     '<div class="cancel-advice alert alert-success py-1 px-2 mt-2 mb-0" style="font-size:0.78rem;">' +
-                                    '<i class="bi bi-lightbulb"></i> <strong>Cita trobada!</strong> Ves a la web del SEPE per reservar-la. Després, esborra aquesta cerca per alliberar recursos del servidor.' +
+                                    '<i class="bi bi-check-circle-fill"></i> <strong>Cita trobada! Cerca aturada automàticament.</strong> Ves a la web del SEPE per reservar-la.' +
                                     '</div>'
                                 );
                             }

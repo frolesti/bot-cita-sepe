@@ -239,17 +239,13 @@ def run_worker():
                         )
                         send_email(data.get('email'), f"\U00002705 CITA SEPE TROBADA! ({type_name} a {success_zip})", email_html)
                         
-                        # Cerques recurrents: continuem buscant
+                        # Aturem la cerca (tant 'once' com recurrents)
+                        data['active'] = False
+                        data['finished_at'] = datetime.now().strftime('%d/%m/%Y %H:%M')
                         freq_type = data.get('freq_type', 'once')
-                        if freq_type == 'once':
-                            data['active'] = False
-                            data['finished_at'] = datetime.now().strftime('%d/%m/%Y %H:%M')
-                        else:
-                            # Reset cicle per al següent interval
-                            data['current_zip_index'] = 0
-                            data['cycle_start_time'] = None
-                            data['status_message'] += f" | Següent cicle en espera"
-                            logger.info(f"Cerca recurrent {dni}: èxit trobat, continuant al pròxim cicle")
+                        if freq_type != 'once':
+                            data['status_message'] += f" (cerca aturada automàticament)"
+                            logger.info(f"Cerca recurrent {dni}: èxit trobat, aturant automàticament")
                         updates_made = True
                         
                     else:
