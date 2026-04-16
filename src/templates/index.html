@@ -671,28 +671,20 @@
     </div>
 
     <footer class="mt-5 mb-4">
-        <!-- Donation / Support Section -->
-        <div class="support-banner mx-auto" style="max-width:640px;background:linear-gradient(135deg,#eff6ff 0%,#e0e7ff 100%);border:1px solid var(--gray-200);border-radius:var(--radius);padding:24px 28px;margin-bottom:20px;box-shadow:var(--shadow);">
-            <div class="d-flex align-items-start gap-3">
-                <div style="font-size:2rem;line-height:1;">❤️</div>
-                <div>
-                    <h6 style="margin:0 0 6px;font-weight:700;color:var(--gray-900);font-size:0.95rem;">Ajuda a mantenir aquest projecte viu</h6>
-                    <p style="margin:0 0 10px;font-size:0.82rem;color:var(--gray-700);line-height:1.55;">
-                        Aquest bot és <strong>gratuït i de codi obert</strong>. El servidor, el domini i el manteniment tenen un cost.
-                        Si t'ha estat útil, considera fer una petita donació o subscripció per ajudar a cobrir les despeses
-                        i que el servei pugui seguir actiu per a tothom.
-                    </p>
-                    <a href="https://frolesti.aixeta.cat/ca" target="_blank" class="btn btn-sm" style="background:var(--primary);color:white;font-weight:600;font-size:0.8rem;padding:6px 18px;border-radius:8px;text-decoration:none;">
-                        <i class="bi bi-heart-fill" style="margin-right:4px;"></i> Col·labora a aixeta.cat
-                    </a>
-                </div>
+        <!-- Aixeta Support Widget -->
+        <a href="https://frolesti.aixeta.cat/ca" target="_blank" class="d-flex align-items-center gap-3 mx-auto text-decoration-none" style="max-width:640px;background:linear-gradient(135deg,#f3f0f8 0%,#e8e4ef 50%,#d5cfe0 100%);border:1px solid #e0dbe8;border-radius:16px;padding:20px 28px;box-shadow:0 2px 8px rgba(0,0,0,0.04);transition:box-shadow .2s,transform .2s;" onmouseover="this.style.boxShadow='0 4px 16px rgba(0,0,0,0.10)';this.style.transform='translateY(-1px)'" onmouseout="this.style.boxShadow='0 2px 8px rgba(0,0,0,0.04)';this.style.transform='none'">
+            <!-- Aixeta Logo -->
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40" style="width:90px;min-width:90px;height:auto;">
+                <text x="0" y="32" style="font-family:'Inter',sans-serif;font-size:32px;font-weight:800;fill:#00bfa5;letter-spacing:-1px;">aixeta</text>
+            </svg>
+            <div>
+                <div style="font-weight:700;color:#37474f;font-size:0.92rem;margin-bottom:2px;">Dona'm suport</div>
+                <div style="font-size:0.78rem;color:#6b7280;line-height:1.5;">Si t'agraden els meus projectes, dona'm suport a l'Aixeta. Cada gota compta!</div>
             </div>
-        </div>
-        <div class="text-center">
-            <small style="color:var(--gray-500);">
-                &copy;frolesti - 2026 |
-                <a href="https://frolesti.aixeta.cat/ca" target="_blank" style="color:var(--primary);text-decoration:none;">frolesti.aixeta.cat</a>
-                <span class="cursor"></span>
+        </a>
+        <div class="text-center mt-3">
+            <small style="color:var(--gray-500);font-size:0.72rem;">
+                &copy;frolesti - 2026 · <a href="https://github.com/frolesti/bot-cita-sepe" target="_blank" style="color:var(--primary);text-decoration:none;">Codi obert a GitHub</a>
             </small>
         </div>
     </footer>
