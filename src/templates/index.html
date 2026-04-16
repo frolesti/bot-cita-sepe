@@ -671,20 +671,25 @@
     </div>
 
     <footer class="mt-5 mb-4">
+        <!-- Financing explanation -->
+        <div class="mx-auto mb-3" style="max-width:640px;padding:0 8px;">
+            <p style="font-size:0.8rem;color:var(--gray-500);line-height:1.65;text-align:center;margin:0;">
+                Aquest bot és <strong><a href="https://github.com/frolesti/bot-cita-sepe" target="_blank" style="color:var(--primary);text-decoration:none;">gratuït i de codi obert</a></strong>.
+                El servidor funciona 24/7 i té uns costos de manteniment (hosting, domini, temps de desenvolupament).
+                Si t'ha ajudat a trobar cita, considera donar suport al projecte perquè pugui seguir actiu per a tothom.
+            </p>
+        </div>
         <!-- Aixeta Support Widget -->
-        <a href="https://frolesti.aixeta.cat/ca" target="_blank" class="d-flex align-items-center gap-3 mx-auto text-decoration-none" style="max-width:640px;background:linear-gradient(135deg,#f3f0f8 0%,#e8e4ef 50%,#d5cfe0 100%);border:1px solid #e0dbe8;border-radius:16px;padding:20px 28px;box-shadow:0 2px 8px rgba(0,0,0,0.04);transition:box-shadow .2s,transform .2s;" onmouseover="this.style.boxShadow='0 4px 16px rgba(0,0,0,0.10)';this.style.transform='translateY(-1px)'" onmouseout="this.style.boxShadow='0 2px 8px rgba(0,0,0,0.04)';this.style.transform='none'">
-            <!-- Aixeta Logo -->
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40" style="width:90px;min-width:90px;height:auto;">
-                <text x="0" y="32" style="font-family:'Inter',sans-serif;font-size:32px;font-weight:800;fill:#00bfa5;letter-spacing:-1px;">aixeta</text>
-            </svg>
+        <a href="https://frolesti.aixeta.cat/ca" target="_blank" class="d-flex align-items-center gap-3 mx-auto text-decoration-none" style="max-width:640px;background:linear-gradient(135deg,#e8f0f5,#f0e8f5);border:1px solid rgba(0,0,0,0.06);border-radius:20px;padding:20px 28px;transition:transform .2s,box-shadow .2s;" onmouseover="this.style.boxShadow='0 6px 20px rgba(0,200,200,0.15)';this.style.transform='translateY(-2px)'" onmouseout="this.style.boxShadow='none';this.style.transform='none'">
+            <img src="{{ url_for('static', filename='img/aixeta-logo.png') }}" alt="Aixeta" style="height:44px;width:auto;flex-shrink:0;">
             <div>
-                <div style="font-weight:700;color:#37474f;font-size:0.92rem;margin-bottom:2px;">Dona'm suport</div>
-                <div style="font-size:0.78rem;color:#6b7280;line-height:1.5;">Si t'agraden els meus projectes, dona'm suport a l'Aixeta. Cada gota compta!</div>
+                <div style="font-weight:600;color:#2c2520;font-size:0.95rem;margin-bottom:2px;">Dona'm suport</div>
+                <div style="font-size:0.82rem;color:#7a6e62;line-height:1.5;">Si t'agraden els meus projectes, dona'm suport a l'Aixeta. Cada gota compta!</div>
             </div>
         </a>
         <div class="text-center mt-3">
             <small style="color:var(--gray-500);font-size:0.72rem;">
-                &copy;frolesti - 2026 · <a href="https://github.com/frolesti/bot-cita-sepe" target="_blank" style="color:var(--primary);text-decoration:none;">Codi obert a GitHub</a>
+                &copy;frolesti - 2026
             </small>
         </div>
     </footer>
